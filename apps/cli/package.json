@@ -1,0 +1,29 @@
+{
+  "name": "@agent-workspace/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "aw": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx src/bin.ts"
+  },
+  "dependencies": {
+    "@agent-workspace/client": "workspace:*",
+    "@agent-workspace/config": "workspace:*",
+    "@agent-workspace/contracts": "workspace:*",
+    "@agent-workspace/core": "workspace:*",
+    "@agent-workspace/mcp": "workspace:*",
+    "@agent-workspace/server": "workspace:*",
+    "commander": "^15.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

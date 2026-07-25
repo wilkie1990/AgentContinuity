@@ -1,0 +1,6 @@
+/* Owned by the sidebar/project-state task (TASK-0005).
+   Structural and off-canvas rules for .sidebar live in layout.css,
+   owned by the shell task, since the sidebar mechanics (open/close,
+   permanent column at desktop) are part of the shared foundation.
+   This file is for the richer project-state presentation that task
+   adds inside the sidebar — intentionally empty until then. */

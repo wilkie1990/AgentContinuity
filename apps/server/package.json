@@ -1,0 +1,33 @@
+{
+  "name": "@agent-workspace/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agent-workspace-server": "./dist/bin.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "tsc -b --clean",
+    "dev": "tsx watch src/bin.ts",
+    "start": "node dist/bin.js"
+  },
+  "dependencies": {
+    "@agent-workspace/config": "workspace:*",
+    "@agent-workspace/contracts": "workspace:*",
+    "@agent-workspace/core": "workspace:*",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/static": "^10.1.2",
+    "fastify": "^5.10.0",
+    "zod": "^4.4.3"
+  }
+}

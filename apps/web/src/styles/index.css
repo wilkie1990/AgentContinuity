@@ -1,0 +1,11 @@
+/* Entry point for the app stylesheet. Vite resolves @import at build
+   time, so this stays a plain CSS import graph rather than a bundler
+   plugin concern. Order matters: tokens and resets first, then shell
+   layout, then the per-area files each task owns. */
+
+@import "./base.css";
+@import "./layout.css";
+@import "./sidebar.css";
+@import "./board.css";
+@import "./drawer.css";
+@import "./views.css";

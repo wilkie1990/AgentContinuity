@@ -1,0 +1,198 @@
+/* ---------------------------------------------------------------- app */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+/* ------------------------------------------------------------- topbar */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.topbar .brand {
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* The subtitle is the first thing sacrificed for space on a phone. */
+.topbar .tagline {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .topbar .tagline {
+    display: inline;
+  }
+}
+
+/* Opens the off-canvas sidebar below 1024px; hidden once the sidebar is
+   a permanent column. */
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+@media (min-width: 1024px) {
+  .sidebar-toggle {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------- shell */
+
+.shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  position: relative;
+}
+
+@media (min-width: 1024px) {
+  .shell {
+    grid-template-columns: 220px 1fr;
+  }
+}
+
+/* ------------------------------------------------------------ sidebar */
+
+/* Mobile/tablet: an off-canvas panel, hidden by default and slid in over
+   the page. Desktop (>=1024px): a permanent column, always visible. */
+.sidebar {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(280px, 85vw);
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--space-4) var(--space-3);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  transform: translateX(-100%);
+  transition: transform 0.18s ease-out;
+  z-index: 40;
+}
+
+.sidebar.open {
+  transform: translateX(0);
+  box-shadow: var(--shadow);
+}
+
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(9 12 17 / 40%);
+  z-index: 35;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  cursor: pointer;
+}
+
+@media (min-width: 1024px) {
+  .sidebar {
+    position: static;
+    width: auto;
+    transform: none;
+    transition: none;
+    box-shadow: none;
+    z-index: auto;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+}
+
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+
+.sidebar a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (min-width: 1024px) {
+  .sidebar a {
+    min-height: 0;
+    padding: 6px 9px;
+  }
+}
+
+.sidebar a:hover { background: var(--surface-2); }
+.sidebar a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+/* --------------------------------------------------------------- main */
+
+.main { overflow: auto; min-width: 0; }
+
+.page { padding: var(--space-4) var(--space-4) var(--space-8); max-width: 1100px; }
+
+@media (min-width: 640px) {
+  .page { padding: var(--space-5) var(--space-6) var(--space-8); }
+}
+
+.page.wide { max-width: none; }
+
+/* -------------------------------------------------------------- tabs */
+
+/* A horizontally scrolling strip reads better on a phone than the
+   multi-row wrap the tab bar used to fall into. */
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.tabs a {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  text-decoration: none;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (min-width: 640px) {
+  .tabs a {
+    min-height: 0;
+    padding: 5px 10px;
+  }
+}
+
+.tabs a:hover { background: var(--surface-2); }
+.tabs a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }

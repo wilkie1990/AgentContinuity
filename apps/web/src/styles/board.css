@@ -1,0 +1,47 @@
+/* Owned by the board task (TASK-0006). Moved as-is from the old
+   styles.css during the stylesheet split; not yet responsive. */
+
+/* All six columns fit a typical laptop window; wider content scrolls horizontally. */
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(186px, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 0 16px 32px;
+  overflow-x: auto;
+}
+
+.column {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.column.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.column header { display: flex; justify-content: space-between; align-items: center; }
+.column header h4 { color: var(--text); }
+
+.task-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: grab;
+  text-align: left;
+  width: 100%;
+  box-shadow: var(--shadow);
+}
+
+.task-card:hover { border-color: var(--accent); background: var(--surface); }
+.task-card.dragging { opacity: 0.45; }
+.task-card .title { font-weight: 500; }
+.task-card.stalled { border-left: 3px solid var(--warning); }
