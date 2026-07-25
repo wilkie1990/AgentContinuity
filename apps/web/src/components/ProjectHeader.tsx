@@ -16,7 +16,7 @@ export function ProjectHeader({ project }: { project: ProjectDetail }) {
   const base = `/projects/${project.key}`;
 
   return (
-    <div className="stack" style={{ padding: "20px 24px 12px" }}>
+    <div className="stack project-header">
       <div className="spread">
         <div>
           <div className="row">
@@ -26,7 +26,7 @@ export function ProjectHeader({ project }: { project: ProjectDetail }) {
           </div>
           {project.objective && <p className="muted small">{project.objective}</p>}
         </div>
-        <div style={{ minWidth: 220 }}>
+        <div style={{ minWidth: 180, maxWidth: "100%", flex: "1 1 220px" }}>
           <ProgressBar value={project.progress} />
           <p className="small muted" style={{ margin: "4px 0 0" }}>
             Last activity: {formatRelative(project.lastActivityAt)}

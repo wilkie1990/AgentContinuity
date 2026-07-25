@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Link, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { useProjects } from "./api.js";
+import { Link, Route, Routes } from "react-router-dom";
 import { NewProjectDialog } from "./components/NewProjectDialog.js";
+import { Sidebar } from "./components/Sidebar.js";
 import { ActivityPage } from "./routes/ActivityPage.js";
 import { BoardPage } from "./routes/BoardPage.js";
 import { ContextPage } from "./routes/ContextPage.js";
@@ -9,61 +9,37 @@ import { DecisionsPage } from "./routes/DecisionsPage.js";
 import { LinksPage } from "./routes/LinksPage.js";
 import { ProjectListPage } from "./routes/ProjectListPage.js";
 
-function Sidebar({ onNewProject }: { onNewProject: () => void }) {
-  const [search, setSearch] = useState("");
-  // The sidebar sits outside the routed area, so the active project comes from the path.
-  const activeKey = useLocation().pathname.split("/")[2];
-  // Archived projects are hidden by default.
-  const { data } = useProjects(["active", "paused", "completed"]);
-
-  const projects = (data?.projects ?? []).filter((project) =>
-    `${project.key} ${project.name} ${project.objective ?? ""}`
-      .toLowerCase()
-      .includes(search.trim().toLowerCase()),
-  );
-
-  return (
-    <aside className="sidebar">
-      <button className="primary" onClick={onNewProject}>
-        + New project
-      </button>
-      <input
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Search projects"
-        aria-label="Search projects"
-      />
-      <nav>
-        {projects.map((project) => (
-          <NavLink
-            key={project.id}
-            to={`/projects/${project.key}`}
-            className={project.key === activeKey ? "active" : undefined}
-            title={project.objective ?? project.name}
-          >
-            {project.name}
-          </NavLink>
-        ))}
-        {projects.length === 0 && <p className="empty small">No projects yet.</p>}
-      </nav>
-    </aside>
-  );
-}
-
 export function App() {
   const [creating, setCreating] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="app">
       <header className="topbar">
-        <Link to="/" className="brand">
-          Agent Workspace
-        </Link>
-        <span className="small muted">Persistent project execution for AI agents</span>
+        <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+          <button
+            type="button"
+            className="sidebar-toggle subtle"
+            onClick={() => setSidebarOpen((value) => !value)}
+            aria-expanded={sidebarOpen}
+            aria-controls="app-sidebar"
+            aria-label={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+          >
+            ☰
+          </button>
+          <Link to="/" className="brand">
+            Agent Workspace
+          </Link>
+        </div>
+        <span className="small muted tagline">Persistent project execution for AI agents</span>
       </header>
 
       <div className="shell">
-        <Sidebar onNewProject={() => setCreating(true)} />
+        <Sidebar
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onNewProject={() => setCreating(true)}
+        />
 
         <main className="main">
           <Routes>
