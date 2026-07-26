@@ -1,5 +1,5 @@
-import { formatKey, type KeyEntity } from "@agent-workspace/contracts";
-import { counters } from "@agent-workspace/database";
+import { formatKey, type KeyEntity } from "@agent-continuity/contracts";
+import { counters } from "@agent-continuity/database";
 import { eq, sql } from "drizzle-orm";
 import type { Runtime } from "./runtime.js";
 

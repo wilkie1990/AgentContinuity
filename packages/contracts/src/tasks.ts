@@ -128,3 +128,16 @@ export const addDependencySchema = z.strictObject({
   ...actorFields,
 });
 export type AddDependencyInput = z.infer<typeof addDependencySchema>;
+
+export const heartbeatSchema = z.strictObject({ actor: z.string().min(1).max(120), sessionId: z.string().min(1).max(200).optional(), phase: z.string().min(1).max(500).optional() });
+export type HeartbeatInput = z.infer<typeof heartbeatSchema>;
+export const checkpointSchema = z.strictObject({ completed: z.string().min(1).max(20_000), workingOn: z.string().min(1).max(20_000), next: z.string().min(1).max(20_000), uncertainty: z.string().max(20_000).nullable().optional(), ...actorFields });
+export type CheckpointInput = z.infer<typeof checkpointSchema>;
+export const workPlanSchema = z.strictObject({ items: z.array(z.string().min(1).max(2_000)).min(1).max(100), ...actorFields });
+export type WorkPlanInput = z.infer<typeof workPlanSchema>;
+export const updateWorkPlanItemSchema = z.strictObject({ status: z.enum(["pending", "active", "completed", "skipped"]), ...actorFields });
+export type UpdateWorkPlanItemInput = z.infer<typeof updateWorkPlanItemSchema>;
+export const criterionEvidenceSchema = z.strictObject({ type: z.string().min(1).max(120), reference: z.string().max(2000).nullable().optional(), content: z.string().max(20_000).nullable().optional(), url: z.string().url().max(4000).nullable().optional(), ...actorFields }).refine(v => Boolean(v.reference || v.content || v.url), { message: "Provide a reference, content, or URL." });
+export type CriterionEvidenceInput = z.infer<typeof criterionEvidenceSchema>;
+export const executionOriginSchema = z.strictObject({ provider: z.string().min(1).max(120), reference: z.string().min(1).max(2000), url: z.string().url().max(4000).nullable().optional(), metadata: z.record(z.string(), z.unknown()).nullable().optional() });
+export type ExecutionOriginInput = z.infer<typeof executionOriginSchema>;

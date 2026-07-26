@@ -1,17 +1,17 @@
 {
-  "name": "@agent-workspace/mcp",
+  "name": "@agent-continuity/mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": { "agent-workspace-mcp": "./dist/bin.js" },
+  "bin": { "agent-continuity-mcp": "./dist/bin.js" },
   "files": ["dist"],
   "scripts": { "build": "tsc -b", "clean": "tsc -b --clean", "dev": "tsx src/bin.ts" },
   "dependencies": {
-    "@agent-workspace/config": "workspace:*",
-    "@agent-workspace/contracts": "workspace:*",
-    "@agent-workspace/core": "workspace:*",
+    "@agent-continuity/config": "workspace:*",
+    "@agent-continuity/contracts": "workspace:*",
+    "@agent-continuity/core": "workspace:*",
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.4.3"

@@ -1,15 +1,16 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type ClaimTaskInput,
   type ReleaseClaimInput,
   type RenewClaimInput,
   type TaskClaim,
-} from "@agent-workspace/contracts";
-import { projects, taskClaims, type TaskClaimRow, type TaskRow } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import { projects, taskClaims, type TaskClaimRow, type TaskRow } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import { assertWritable, requireTask } from "../refs.js";
 import type { Runtime } from "../runtime.js";
+import type { ExecutionService } from "../executions/service.js";
 import { writeStatus } from "../tasks/status.js";
 import {
   findActiveClaim,
@@ -34,7 +35,7 @@ function sameOwner(
 
 export type ClaimService = ReturnType<typeof createClaimService>;
 
-export function createClaimService(runtime: Runtime, activity: ActivityService) {
+export function createClaimService(runtime: Runtime, activity: ActivityService, executions?: ExecutionService) {
   /**
    * Lazily emits task.claim_expired for leases that lapsed since the last read.
    * `expiry_recorded_at` guarantees the event fires at most once per claim, which is why
@@ -61,6 +62,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
           sessionId: claim.sessionId,
           payload: { claimedAt: claim.claimedAt, expiresAt: claim.expiresAt },
         });
+        executions?.endForClaim(claim.taskId, claim.id, "claim expired");
       }
     });
   }
@@ -106,6 +108,21 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
     activeForMany,
     touch,
 
+    /** A silent liveness update: lease and execution timestamps change, activity does not. */
+    heartbeat(taskRef: string, input: { actor: string; sessionId?: string; phase?: string }): TaskClaim {
+      return runtime.tx(() => {
+        const task = requireTask(runtime, taskRef);
+        const claim = findActiveClaim(runtime, task.id);
+        if (!claim || !sameOwner(claim, input.actor, input.sessionId)) {
+          throw new AgentContinuityError("TASK_CLAIM_MISMATCH", `No matching active claim exists on ${task.key}.`, { task: task.key });
+        }
+        const now = runtime.now();
+        const updated = runtime.db.update(taskClaims).set({ lastActiveAt: now, expiresAt: runtime.future(runtime.claimTtlMinutes) }).where(eq(taskClaims.id, claim.id)).returning().get();
+        executions?.heartbeat(task.id, input);
+        return toClaimDto(runtime, updated, task.key);
+      });
+    },
+
     claim(taskRef: string, input: ClaimTaskInput): { claim: TaskClaim; task: TaskRow } {
       return runtime.tx(() => {
         const task = requireTask(runtime, taskRef);
@@ -116,7 +133,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
         const existing = findActiveClaim(runtime, task.id);
 
         if (existing && !sameOwner(existing, input.actor, input.sessionId)) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_ALREADY_CLAIMED",
             `${task.key} is currently claimed by ${existing.actor}.`,
             {
@@ -171,6 +188,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
           payload: { expiresAt },
         });
 
+        executions?.onClaim(task.id, row, Boolean(existing));
         return { claim: toClaimDto(runtime, row, task.key), task: nextTask };
       });
     },
@@ -182,7 +200,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
 
         const existing = findActiveClaim(runtime, task.id);
         if (!existing) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_NOT_CLAIMED",
             `${task.key} has no active claim to renew.`,
             { task: task.key },
@@ -190,7 +208,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
         }
 
         if (!sameOwner(existing, input.actor, input.sessionId)) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_CLAIM_MISMATCH",
             `The active claim on ${task.key} belongs to ${existing.actor}${
               existing.sessionId ? ` (session ${existing.sessionId})` : ""
@@ -227,7 +245,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
 
         const existing = findActiveClaim(runtime, task.id);
         if (!existing) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_NOT_CLAIMED",
             `${task.key} has no active claim to release.`,
             { task: task.key },
@@ -237,7 +255,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
         // Omitting the actor is a deliberate forced release, which the human UI offers.
         const forced = !input.actor;
         if (!forced && !sameOwner(existing, input.actor, input.sessionId)) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_CLAIM_MISMATCH",
             `The active claim on ${task.key} belongs to ${existing.actor} and cannot be released by ${input.actor}.`,
             { task: task.key, actor: existing.actor },
@@ -295,6 +313,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService) 
       },
     });
 
+    executions?.endForClaim(task.id, existing.id, options.reason ?? (options.forced ? "claim forcibly released" : "claim released"));
     return toClaimDto(runtime, row, task.key);
   }
 }

@@ -1,5 +1,5 @@
-import type { Blocker } from "@agent-workspace/contracts";
-import { blockers, tasks, type BlockerRow } from "@agent-workspace/database";
+import type { Blocker } from "@agent-continuity/contracts";
+import { blockers, tasks, type BlockerRow } from "@agent-continuity/database";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Runtime } from "../runtime.js";
 

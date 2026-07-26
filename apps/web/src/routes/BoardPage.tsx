@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@agent-workspace/contracts";
+import type { TaskStatus } from "@agent-continuity/contracts";
 import { useParams, useSearchParams } from "react-router-dom";
 import { client, useProject, useTasks, useWorkspaceMutation } from "../api.js";
 import { Board, type BoardMove } from "../components/Board.js";

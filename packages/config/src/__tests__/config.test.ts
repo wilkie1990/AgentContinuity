@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { resolveConfig } from "../index.js";
 
 // A directory that does not exist, so resolveConfig never picks up the developer's real
-// ~/.agent-workspace/config.json while these tests run.
-const ISOLATED_DIR = "/tmp/agent-workspace-config-test-does-not-exist";
+// ~/.agent-continuity/config.json while these tests run.
+const ISOLATED_DIR = "/tmp/agent-continuity-config-test-does-not-exist";
 
 describe("resolveConfig host resolution", () => {
   it("binds 127.0.0.1 by default when nothing is configured", () => {
@@ -24,8 +24,8 @@ describe("resolveConfig host resolution", () => {
     expect(config.baseUrl).toBe("http://127.0.0.1:4732");
   });
 
-  it("reads AGENT_WORKSPACE_HOST from the environment", () => {
-    const config = resolveConfig({ dataDir: ISOLATED_DIR }, { AGENT_WORKSPACE_HOST: "10.0.0.5" });
+  it("reads AGENT_CONTINUITY_HOST from the environment", () => {
+    const config = resolveConfig({ dataDir: ISOLATED_DIR }, { AGENT_CONTINUITY_HOST: "10.0.0.5" });
     expect(config.server.host).toBe("10.0.0.5");
   });
 

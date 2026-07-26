@@ -1,5 +1,6 @@
-/* Owned by the drawer task (TASK-0007). Moved as-is from the old
-   styles.css during the stylesheet split; not yet responsive. */
+/* Owned by the drawer task (TASK-0007). Mobile-first: base rules make the
+   drawer a full-screen surface, and it becomes the min(720px, 92vw)
+   right-hand panel from tablet up (>=640px). */
 
 .drawer-backdrop {
   position: fixed;
@@ -12,22 +13,131 @@
 
 .drawer {
   background: var(--surface);
-  width: min(720px, 92vw);
+  width: 100%;
   height: 100%;
   overflow-y: auto;
-  border-left: 1px solid var(--border);
-  padding: 18px 22px 60px;
+  overflow-x: hidden;
+  padding: var(--space-4) var(--space-4) var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-5);
+}
+
+@media (min-width: 640px) {
+  .drawer {
+    width: min(720px, 92vw);
+    border-left: 1px solid var(--border);
+    padding: var(--space-5) var(--space-6) 60px;
+  }
+}
+
+/* The key + close button stay reachable without scrolling back up through
+   eleven sections on a phone. */
+.drawer > .spread:first-child {
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) 0;
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  background: var(--surface);
+  z-index: 1;
+}
+
+@media (min-width: 640px) {
+  .drawer > .spread:first-child {
+    top: calc(-1 * var(--space-5));
+    margin: calc(-1 * var(--space-5)) calc(-1 * var(--space-6)) 0;
+    padding: var(--space-5) var(--space-6) var(--space-2);
+  }
 }
 
 .drawer section { display: flex; flex-direction: column; gap: 8px; }
 .drawer section > .rows { display: flex; flex-direction: column; gap: 6px; }
 
+/* Collapsible section (see components/DrawerSection.tsx). Eleven sections
+   is too many to show at once on a phone, so most collapse behind a
+   summary; the handful someone opens a task to actually act on (description,
+   context, acceptance criteria, progress, blockers) stay open on every
+   viewport — see the defaultOpen choices in TaskDrawer.tsx. */
+.drawer-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.drawer-section + .drawer-section { margin-top: 0; }
+
+.drawer-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  min-height: 44px;
+}
+
+@media (min-width: 640px) {
+  .drawer-section > summary { min-height: 0; padding: var(--space-2) var(--space-3); }
+}
+
+.drawer-section > summary::-webkit-details-marker { display: none; }
+
+.drawer-section > summary::before {
+  content: "";
+  flex: none;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.drawer-section[open] > summary::before { transform: rotate(90deg); }
+
+.drawer-section > summary h4 { margin: 0; }
+
+.drawer-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+@media (min-width: 640px) {
+  .drawer-section-body { padding: 0 var(--space-3) var(--space-3); }
+}
+
 .criterion { display: flex; gap: 8px; align-items: flex-start; }
 .criterion input { width: auto; margin-top: 3px; }
 .criterion.complete span { text-decoration: line-through; color: var(--muted); }
+
+/* The Now section is a deliberate resume surface, not another activity feed. */
+.now-execution {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+
+.now-execution > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.now-checkpoint { display: grid; gap: var(--space-2); }
+.now-checkpoint > div { border-left: 2px solid var(--accent); padding-left: var(--space-2); }
+.now-checkpoint > .uncertainty { border-color: var(--warning); }
+.now-checkpoint span, .work-plan-state { font-size: var(--text-2xs); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.now-checkpoint p, .handoff-content p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.work-plan { list-style: none; padding: 0; margin: var(--space-2) 0 0; display: flex; flex-direction: column; gap: 5px; }
+.work-plan-item { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--space-2); align-items: baseline; }
+.work-plan-active { color: var(--accent); font-weight: 600; }
+.work-plan-completed { color: var(--muted); text-decoration: line-through; }
+.work-plan-skipped { color: var(--muted); text-decoration: line-through; }
+
+.handoff-placeholder { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.handoff-placeholder h4 { margin-bottom: var(--space-1); }
 
 .dialog-backdrop {
   position: fixed;

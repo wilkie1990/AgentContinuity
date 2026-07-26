@@ -26,7 +26,7 @@ activity and used to match claims.
 | --- | --- |
 | 400 | `VALIDATION_ERROR`, `DEPENDENCY_SELF_REFERENCE`, `DEPENDENCY_CROSS_PROJECT`, `INVALID_BOOTSTRAP_REFERENCE`, `INVALID_METADATA` |
 | 404 | `PROJECT_NOT_FOUND`, `TASK_NOT_FOUND`, `BLOCKER_NOT_FOUND`, `DECISION_NOT_FOUND`, `LINK_NOT_FOUND`, `DEPENDENCY_NOT_FOUND`, `ACCEPTANCE_CRITERION_NOT_FOUND` |
-| 409 | `PROJECT_ARCHIVED`, `TASK_ALREADY_CLAIMED`, `TASK_NOT_CLAIMED`, `TASK_CLAIM_MISMATCH`, `TASK_HAS_INCOMPLETE_ACCEPTANCE_CRITERIA`, `TASK_HAS_ACTIVE_BLOCKERS`, `BLOCKER_ALREADY_RESOLVED`, `ACCEPTANCE_CRITERION_ALREADY_COMPLETE`, `ACCEPTANCE_CRITERION_ALREADY_OPEN`, `INVALID_STATUS_TRANSITION`, `DEPENDENCY_CYCLE` |
+| 409 | `PROJECT_ARCHIVED`, `PROJECT_HAS_CLAIMED_TASKS`, `TASK_ALREADY_CLAIMED`, `TASK_NOT_CLAIMED`, `TASK_CLAIM_MISMATCH`, `TASK_HAS_INCOMPLETE_ACCEPTANCE_CRITERIA`, `TASK_HAS_ACTIVE_BLOCKERS`, `BLOCKER_ALREADY_RESOLVED`, `ACCEPTANCE_CRITERION_ALREADY_COMPLETE`, `ACCEPTANCE_CRITERION_ALREADY_OPEN`, `INVALID_STATUS_TRANSITION`, `DEPENDENCY_CYCLE` |
 | 500 | `INTERNAL_ERROR` |
 
 ## Health
@@ -47,6 +47,7 @@ GET /api/v1/health
 | `PATCH` | `/projects/:project` | `name`, `objective`, `description`, `status` |
 | `PUT` | `/projects/:project/context` | `{ context }` — replaces the whole value |
 | `POST` | `/projects/:project/archive` | Archived projects reject further mutations |
+| `DELETE` | `/projects/:project` | `{ force? }` — permanent; see below |
 
 `sort` accepts `updated_at_desc` (default), `updated_at_asc`, `created_at_desc`, `name_asc`.
 
@@ -129,6 +130,42 @@ timeline that the task's own events are leaving.
 Deleting a task another agent holds an active claim on is rejected with
 `TASK_ALREADY_CLAIMED` unless `force` is true.
 
+### Deleting a project
+
+`DELETE /projects/:project` is permanent and has no undo. Archiving is the reversible,
+everyday action — it hides a project and makes it read-only. Deletion is for a project that
+should never have existed (created by mistake, or during verification), and it removes
+everything the project owns: every task and everything each task owns, plus the project's
+own decisions, links and activity history. Database foreign keys cascade from `projects`, so
+one row delete does the rest. It returns a summary of what went:
+
+```json
+{
+  "deleted": {
+    "key": "PRJ-0014",
+    "name": "Verify mobile 1784994295929",
+    "removed": {
+      "tasks": 0, "acceptanceCriteria": 0, "progress": 0, "blockers": 0, "claims": 0,
+      "dependencies": 0, "decisions": 0, "links": 0, "activityEvents": 2
+    }
+  }
+}
+```
+
+A project may be deleted regardless of its status — archiving first is not required. The
+only structural guard is claimed work: deleting a project with a task another agent holds an
+active claim on is rejected with `PROJECT_HAS_CLAIMED_TASKS` unless `force` is true, the same
+protection task deletion gives an individual claimed task.
+
+Unlike task deletion, a deleted project has no surviving parent scope, so there is nowhere in
+the workspace for a `project.deleted` event to live — deletion is not recorded in the
+queryable activity timeline. The response above is the durable record for the caller, and the
+server additionally writes one line to its own process log (not the database) naming the
+project, actor and everything removed, as a lightweight operational trace. See the project's
+recorded decision on this for the full reasoning.
+
+The project key counter is never rolled back on delete, so a key is never reused.
+
 ## Claims
 
 | Method | Path | Notes |
@@ -167,7 +204,7 @@ Links are deliberately generic — `type` and `provider` are free text and no pr
 behaviour is implied:
 
 ```json
-{ "type": "issue", "provider": "jira", "reference": "AW-42", "metadata": { "status": "In Progress" } }
+{ "type": "issue", "provider": "jira", "reference": "AC-42", "metadata": { "status": "In Progress" } }
 { "type": "branch", "provider": "git", "reference": "feature/TASK-0042" }
 ```
 
@@ -193,7 +230,7 @@ no identifier sequences are consumed.
 
 ```json
 {
-  "name": "Agent Workspace",
+  "name": "Agent Continuity",
   "objective": "Build a persistent execution layer for AI agents",
   "context": "...",
   "tasks": [
@@ -201,7 +238,7 @@ no identifier sequences are consumed.
     { "ref": "claim-model", "title": "Design task claim model", "dependsOn": ["task-model"] }
   ],
   "decisions": [{ "title": "...", "decision": "...", "taskRef": "claim-model" }],
-  "links": [{ "type": "repository", "provider": "github", "reference": "agent-workspace" }]
+  "links": [{ "type": "repository", "provider": "github", "reference": "agent-continuity" }]
 }
 ```
 
@@ -226,3 +263,21 @@ Every request **body** rejects unrecognised fields with `VALIDATION_ERROR`. This
 most for bootstrap: quietly dropping a misspelled `acceptance_criteria` would leave an agent
 believing it had created a task decomposition it had not. Query strings remain permissive,
 since URLs legitimately carry unrelated parameters.
+
+## Execution continuity
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/tasks/:task/heartbeat` | Silently renew the matching claim and execution liveness |
+| `GET` | `/tasks/:task/execution` | Return exactly `{ execution, checkpoints, workPlan, handoff }` |
+| `GET` / `POST` | `/tasks/:task/checkpoints` | List or record a structured checkpoint |
+| `GET` / `PUT` | `/tasks/:task/work-plan` | Read or replace the ordered work plan |
+| `PATCH` | `/tasks/:task/work-plan/:item` | Change one phase status |
+| `POST` | `/tasks/:task/execution/origins` | Attach a provider-neutral execution origin |
+| `GET` / `POST` | `/tasks/:task/acceptance-criteria/:criterion/evidence` | List or attach proof |
+| `GET` | `/attention` | List work requiring a human or agent action |
+
+A heartbeat never creates an activity event. Checkpoints are meaningful resume state, not
+command logs. Releasing, completing or expiring a claim ends its execution and captures a
+handoff from the latest checkpoint. A later claim can reclaim the task without discarding
+that durable history.

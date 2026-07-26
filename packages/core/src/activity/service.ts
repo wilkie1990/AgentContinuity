@@ -3,8 +3,8 @@ import type {
   ActivityEventType,
   ActivityPage,
   ListActivityQuery,
-} from "@agent-workspace/contracts";
-import { activityEvents } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import { activityEvents } from "@agent-continuity/database";
 import { requireProject, requireTask } from "../refs.js";
 import type { Runtime } from "../runtime.js";
 import { encodeCursor, queryActivity, type ActivityFilter } from "./repository.js";

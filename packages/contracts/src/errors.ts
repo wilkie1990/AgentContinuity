@@ -1,6 +1,7 @@
 export const ERROR_CODES = [
   "PROJECT_NOT_FOUND",
   "PROJECT_ARCHIVED",
+  "PROJECT_HAS_CLAIMED_TASKS",
   "TASK_NOT_FOUND",
   "TASK_ALREADY_CLAIMED",
   "TASK_NOT_CLAIMED",
@@ -41,13 +42,13 @@ export type ErrorBody = {
  * The single error type raised by core services. Every transport (REST, MCP, CLI)
  * translates this into its own representation while preserving `code`.
  */
-export class AgentWorkspaceError extends Error {
+export class AgentContinuityError extends Error {
   readonly code: ErrorCode;
   readonly details: ErrorDetails;
 
   constructor(code: ErrorCode, message: string, details: ErrorDetails = {}) {
     super(message);
-    this.name = "AgentWorkspaceError";
+    this.name = "AgentContinuityError";
     this.code = code;
     this.details = details;
   }
@@ -56,14 +57,15 @@ export class AgentWorkspaceError extends Error {
     return { error: { code: this.code, message: this.message, details: this.details } };
   }
 
-  static is(value: unknown): value is AgentWorkspaceError {
-    return value instanceof AgentWorkspaceError;
+  static is(value: unknown): value is AgentContinuityError {
+    return value instanceof AgentContinuityError;
   }
 }
 
 const HTTP_STATUS_BY_CODE: Record<ErrorCode, number> = {
   PROJECT_NOT_FOUND: 404,
   PROJECT_ARCHIVED: 409,
+  PROJECT_HAS_CLAIMED_TASKS: 409,
   TASK_NOT_FOUND: 404,
   TASK_ALREADY_CLAIMED: 409,
   TASK_NOT_CLAIMED: 409,

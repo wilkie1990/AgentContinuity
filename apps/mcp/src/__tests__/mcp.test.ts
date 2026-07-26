@@ -1,4 +1,4 @@
-import { createTestWorkspace, type TestWorkspace } from "@agent-workspace/core/testing";
+import { createTestWorkspace, type TestWorkspace } from "@agent-continuity/core/testing";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -49,6 +49,7 @@ describe("MCP adapter", () => {
     expect(names).toEqual(
       [
         "activity_list",
+        "attention_list",
         "decisions_create",
         "decisions_list",
         "links_add",
@@ -56,19 +57,25 @@ describe("MCP adapter", () => {
         "links_remove",
         "projects_bootstrap",
         "projects_create",
+        "projects_delete",
         "projects_get",
         "projects_list",
         "projects_update",
         "projects_update_context",
         "tasks_add_acceptance_criteria",
         "tasks_add_blocker",
+        "tasks_add_criterion_evidence",
         "tasks_add_dependency",
+        "tasks_add_execution_origin",
         "tasks_add_progress",
+        "tasks_checkpoint",
         "tasks_claim",
         "tasks_complete",
         "tasks_create",
         "tasks_delete",
         "tasks_get",
+        "tasks_execution_get",
+        "tasks_heartbeat",
         "tasks_list",
         "tasks_release_claim",
         "tasks_remove_dependency",
@@ -76,6 +83,7 @@ describe("MCP adapter", () => {
         "tasks_update",
         "tasks_update_acceptance_criteria",
         "tasks_update_context",
+        "tasks_work_plan",
       ].sort(),
     );
 
@@ -90,12 +98,67 @@ describe("MCP adapter", () => {
     expect(result.isError).toBe(true);
   });
 
+  it("exposes the execution continuity lifecycle through MCP", async () => {
+    await call("projects_create", { name: "Continuity tools" });
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [{ title: "Verify execution", status: "ready", acceptance_criteria: ["Proven"] }],
+    });
+    await call("tasks_claim", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "continuity-run",
+    });
+
+    expect(
+      (
+        await call("tasks_heartbeat", {
+          task: "TASK-0001",
+          actor: "codex",
+          session_id: "continuity-run",
+          phase: "Verification",
+        })
+      ).text,
+    ).toBe("Heartbeat recorded.");
+    await call("tasks_checkpoint", {
+      task: "TASK-0001",
+      completed: "Claim",
+      working_on: "Verification",
+      next: "Complete",
+      actor: "codex",
+      session_id: "continuity-run",
+    });
+    await call("tasks_work_plan", {
+      task: "TASK-0001",
+      items: ["Implement", "Verify"],
+      actor: "codex",
+    });
+    await call("tasks_add_criterion_evidence", {
+      task: "TASK-0001",
+      criterion: "Proven",
+      type: "test",
+      reference: "mcp.test.ts",
+      actor: "codex",
+    });
+    await call("tasks_add_execution_origin", {
+      task: "TASK-0001",
+      provider: "codex",
+      reference: "continuity-thread",
+    });
+
+    const state = await call("tasks_execution_get", { task: "TASK-0001" });
+    expect(state.text).toContain("codex — active");
+    expect(state.text).toContain("Verification");
+    expect(state.text).toContain("Implement");
+    expect((await call("attention_list")).text).toContain("No work needs attention");
+  });
+
   it("preserves the domain error code", async () => {
     const missing = await call("tasks_get", { task: "TASK-9999" });
     expect(missing.isError).toBe(true);
     expect(missing.text).toContain("TASK_NOT_FOUND");
 
-    await call("projects_create", { name: "Agent Workspace" });
+    await call("projects_create", { name: "Agent Continuity" });
     await call("tasks_create", { project: "PRJ-0001", tasks: [{ title: "A" }] });
     await call("tasks_claim", { task: "TASK-0001", actor: "codex" });
 
@@ -105,7 +168,7 @@ describe("MCP adapter", () => {
   });
 
   it("explains dependency cycles in the error text", async () => {
-    await call("projects_create", { name: "Agent Workspace" });
+    await call("projects_create", { name: "Agent Continuity" });
     await call("tasks_create", { project: "PRJ-0001", tasks: [{ title: "A" }, { title: "B" }] });
     await call("tasks_add_dependency", { task: "TASK-0001", depends_on: "TASK-0002" });
 
@@ -118,7 +181,7 @@ describe("MCP adapter", () => {
 
   it("renders task state in an agent readable form", async () => {
     await call("projects_bootstrap", {
-      name: "Agent Workspace",
+      name: "Agent Continuity",
       tasks: [
         {
           ref: "claim-model",
@@ -159,7 +222,7 @@ describe("MCP adapter", () => {
   it("completes the full agent handover scenario", async () => {
     // Agent A converts a plan into a project.
     const bootstrap = await call("projects_bootstrap", {
-      name: "Agent Workspace",
+      name: "Agent Continuity",
       objective: "Build a persistent execution layer for AI agents",
       context: "The conversation is temporary. The agent is replaceable. Project state persists.",
       tasks: [
@@ -185,7 +248,7 @@ describe("MCP adapter", () => {
     expect(bootstrap.isError).toBe(false);
     expect(bootstrap.text).toContain("task-model -> TASK-0001");
 
-    expect((await call("projects_list", {})).text).toContain("PRJ-0001 — Agent Workspace");
+    expect((await call("projects_list", {})).text).toContain("PRJ-0001 — Agent Continuity");
     expect((await call("projects_get", { project: "PRJ-0001" })).text).toContain(
       "The conversation is temporary.",
     );
@@ -260,7 +323,7 @@ describe("MCP adapter", () => {
   });
 
   it("manages blockers, links and criteria through their tools", async () => {
-    await call("projects_create", { name: "Agent Workspace" });
+    await call("projects_create", { name: "Agent Continuity" });
     await call("tasks_create", { project: "PRJ-0001", tasks: [{ title: "Design", status: "ready" }] });
 
     const blocked = await call("tasks_add_blocker", {
@@ -282,15 +345,15 @@ describe("MCP adapter", () => {
       project: "PRJ-0001",
       task: "TASK-0001",
       links: [
-        { type: "issue", provider: "jira", reference: "AW-42" },
+        { type: "issue", provider: "jira", reference: "AC-42" },
         { type: "branch", provider: "git", reference: "feature/TASK-0001" },
       ],
     });
     expect(links.text).toContain("Added 2 link(s)");
-    expect((await call("links_list", { project: "PRJ-0001", type: "issue" })).text).toContain("AW-42");
+    expect((await call("links_list", { project: "PRJ-0001", type: "issue" })).text).toContain("AC-42");
 
     await call("links_remove", { link: "LNK-0001" });
-    expect((await call("links_list", { project: "PRJ-0001" })).text).not.toContain("AW-42");
+    expect((await call("links_list", { project: "PRJ-0001" })).text).not.toContain("AC-42");
 
     await call("tasks_add_acceptance_criteria", {
       task: "TASK-0001",
@@ -302,5 +365,39 @@ describe("MCP adapter", () => {
     });
     expect(updated.text).toContain("(1/1)");
     expect(updated.text).toContain("[✓] Outcome is objectively checkable");
+  });
+
+  it("permanently deletes a project through projects_delete", async () => {
+    await call("projects_create", { name: "Verify mobile" });
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [{ title: "Scratch", acceptance_criteria: ["One"] }],
+    });
+
+    const deleted = await call("projects_delete", { project: "PRJ-0001", actor: "adam" });
+    expect(deleted.text).toContain("Deleted PRJ-0001 — Verify mobile.");
+    expect(deleted.text).toContain("Removed 1 tasks, 1 acceptance criteria");
+
+    const missing = await call("projects_get", { project: "PRJ-0001" });
+    expect(missing.isError).toBe(true);
+    expect(missing.text).toContain("PROJECT_NOT_FOUND");
+  });
+
+  it("refuses to delete a project with a claimed task, unless forced", async () => {
+    await call("projects_create", { name: "Agent Continuity" });
+    await call("tasks_create", { project: "PRJ-0001", tasks: [{ title: "Claimed" }] });
+    await call("tasks_claim", { task: "TASK-0001", actor: "codex" });
+
+    const refused = await call("projects_delete", { project: "PRJ-0001", actor: "adam" });
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain("PROJECT_HAS_CLAIMED_TASKS");
+
+    const forced = await call("projects_delete", {
+      project: "PRJ-0001",
+      actor: "adam",
+      force: true,
+    });
+    expect(forced.isError).toBeFalsy();
+    expect(forced.text).toContain("Deleted PRJ-0001");
   });
 });

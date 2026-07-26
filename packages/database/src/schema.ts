@@ -110,6 +110,94 @@ export const taskProgress = sqliteTable(
   ],
 );
 
+/** A provider-neutral run of work. Claims are leases; executions are durable history. */
+export const taskExecutions = sqliteTable(
+  "task_executions",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    claimId: text("claim_id"),
+    actor: text("actor").notNull(),
+    sessionId: text("session_id"),
+    status: text("status").notNull().default("running"),
+    currentPhase: text("current_phase"),
+    startedAt: text("started_at").notNull(),
+    resumedAt: text("resumed_at"),
+    lastHeartbeatAt: text("last_heartbeat_at").notNull(),
+    endedAt: text("ended_at"),
+    terminationReason: text("termination_reason"),
+  },
+  (table) => [
+    index("task_executions_task_id_idx").on(table.taskId),
+    index("task_executions_claim_id_idx").on(table.claimId),
+    index("task_executions_status_idx").on(table.status),
+  ],
+);
+
+export const executionOrigins = sqliteTable(
+  "execution_origins",
+  {
+    id: text("id").primaryKey(),
+    executionId: text("execution_id").notNull(),
+    provider: text("provider").notNull(),
+    reference: text("reference").notNull(),
+    url: text("url"),
+    metadataJson: text("metadata_json"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("execution_origins_execution_id_idx").on(table.executionId)],
+);
+
+export const taskCheckpoints = sqliteTable(
+  "task_checkpoints",
+  {
+    id: text("id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    executionId: text("execution_id"),
+    completed: text("completed").notNull(),
+    workingOn: text("working_on").notNull(),
+    next: text("next").notNull(),
+    uncertainty: text("uncertainty"),
+    actor: text("actor"),
+    sessionId: text("session_id"),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [
+    index("task_checkpoints_task_id_idx").on(table.taskId),
+    index("task_checkpoints_created_at_idx").on(table.createdAt),
+  ],
+);
+
+export const taskWorkPlanItems = sqliteTable(
+  "task_work_plan_items",
+  {
+    id: text("id").primaryKey(), taskId: text("task_id").notNull(), title: text("title").notNull(),
+    status: text("status").notNull().default("pending"), sortOrder: real("sort_order").notNull(),
+    createdAt: text("created_at").notNull(), updatedAt: text("updated_at").notNull(), completedAt: text("completed_at"),
+  },
+  (table) => [index("task_work_plan_items_task_id_idx").on(table.taskId)],
+);
+
+export const taskHandoffs = sqliteTable(
+  "task_handoffs",
+  {
+    id: text("id").primaryKey(), taskId: text("task_id").notNull(), executionId: text("execution_id"),
+    reason: text("reason").notNull(), summary: text("summary").notNull(), nextAction: text("next_action"),
+    unresolvedJson: text("unresolved_json").notNull().default("[]"), createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("task_handoffs_task_id_idx").on(table.taskId)],
+);
+
+export const criterionEvidence = sqliteTable(
+  "criterion_evidence",
+  {
+    id: text("id").primaryKey(), criterionId: text("criterion_id").notNull(), type: text("type").notNull(),
+    reference: text("reference"), content: text("content"), url: text("url"), actor: text("actor"),
+    sessionId: text("session_id"), createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("criterion_evidence_criterion_id_idx").on(table.criterionId)],
+);
+
 export const blockers = sqliteTable(
   "blockers",
   {
@@ -208,6 +296,12 @@ export type AcceptanceCriterionRow = typeof acceptanceCriteria.$inferSelect;
 export type TaskDependencyRow = typeof taskDependencies.$inferSelect;
 export type TaskClaimRow = typeof taskClaims.$inferSelect;
 export type TaskProgressRow = typeof taskProgress.$inferSelect;
+export type TaskExecutionRow = typeof taskExecutions.$inferSelect;
+export type ExecutionOriginRow = typeof executionOrigins.$inferSelect;
+export type TaskCheckpointRow = typeof taskCheckpoints.$inferSelect;
+export type TaskWorkPlanItemRow = typeof taskWorkPlanItems.$inferSelect;
+export type TaskHandoffRow = typeof taskHandoffs.$inferSelect;
+export type CriterionEvidenceRow = typeof criterionEvidence.$inferSelect;
 export type BlockerRow = typeof blockers.$inferSelect;
 export type DecisionRow = typeof decisions.$inferSelect;
 export type LinkRow = typeof links.$inferSelect;

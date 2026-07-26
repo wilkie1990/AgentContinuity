@@ -1,22 +1,22 @@
-import { AgentWorkspaceError, type ErrorCode } from "@agent-workspace/contracts";
+import { AgentContinuityError, type ErrorCode } from "@agent-continuity/contracts";
 import { expect } from "vitest";
 import { createTestWorkspace, type TestWorkspace } from "../testing.js";
 
 export { createTestWorkspace, type TestWorkspace };
 
-/** Asserts that `fn` throws an AgentWorkspaceError carrying the given domain code. */
-export function expectErrorCode(fn: () => unknown, code: ErrorCode): AgentWorkspaceError {
+/** Asserts that `fn` throws an AgentContinuityError carrying the given domain code. */
+export function expectErrorCode(fn: () => unknown, code: ErrorCode): AgentContinuityError {
   try {
     fn();
   } catch (error) {
-    if (!AgentWorkspaceError.is(error)) throw error;
+    if (!AgentContinuityError.is(error)) throw error;
     expect(error.code).toBe(code);
     return error;
   }
-  throw new Error(`Expected an AgentWorkspaceError with code ${code}, but nothing was thrown.`);
+  throw new Error(`Expected an AgentContinuityError with code ${code}, but nothing was thrown.`);
 }
 
-export function seedProject(workspace: TestWorkspace, name = "Agent Workspace") {
+export function seedProject(workspace: TestWorkspace, name = "Agent Continuity") {
   return workspace.projects.create({ name, objective: "Prove the workspace model", actor: "codex" });
 }
 

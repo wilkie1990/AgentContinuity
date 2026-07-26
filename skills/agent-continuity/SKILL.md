@@ -1,13 +1,13 @@
 ---
-name: agent-workspace
-description: Use Agent Workspace as persistent project state for meaningful multi-step work. Use whenever work spans more than a single exchange, continues something started earlier, or should survive the end of this conversation - to find the right project, read project and task context, claim a task, record progress, decisions and blockers, and hand over cleanly. Triggers on "continue the project", "what was I working on", "pick up where we left off", or any request to track, resume, or hand over work.
+name: agent-continuity
+description: Use Agent Continuity as persistent project state for meaningful multi-step work. Use whenever work spans more than a single exchange, continues something started earlier, or should survive the end of this conversation - to find the right project, read project and task context, claim a task, record progress, decisions and blockers, and hand over cleanly. Triggers on "continue the project", "what was I working on", "pick up where we left off", or any request to track, resume, or hand over work.
 ---
 
-# Agent Workspace
+# Agent Continuity
 
 The conversation is temporary. The agent is replaceable. The project state persists.
 
-Agent Workspace stores structured project state so that another agent — or you in a
+Agent Continuity stores structured project state so that another agent — or you in a
 later session — can continue work without the user re-explaining anything.
 
 Use it for meaningful multi-step work. Do not use it for one-off questions, trivial
@@ -63,6 +63,26 @@ whenever you record real work. **Do not claim a task simply to inspect it.**
 
 If `tasks_claim` returns `TASK_ALREADY_CLAIMED`, another agent holds a live lease. Pick
 different work or ask the user, rather than forcing your way in.
+
+## Execution continuity
+
+Task status describes the workflow state; execution health describes whether an agent is
+actually alive and making progress. Do not treat an `in_progress` task as proof that its
+agent is active.
+
+- Send `tasks_heartbeat` silently while actively working. A heartbeat is liveness only:
+  do not create a progress entry or narrate it to the user.
+- Use `tasks_checkpoint` at meaningful phase boundaries and before a handoff. Include
+  what is complete, what is being worked on, the next action, and genuine uncertainty.
+- Use `tasks_work_plan` for an ordered implementation checklist. Mark one phase active
+  and complete phases as work advances. A work plan explains *how* work proceeds;
+  acceptance criteria explain *what proves it is done*.
+- Use `tasks_execution_get` after taking over work, to read the latest execution,
+  checkpoints, work plan, and handoff before changing anything.
+- Attach proof to individual criteria with `tasks_add_criterion_evidence` as tests,
+  files, results, or links become available. Do not wait until final completion.
+- Use `attention_list` to find stale claims, interrupted executions, blockers, review
+  work, and handoffs requiring action.
 
 ## Progress
 
@@ -140,8 +160,9 @@ Before completing a task:
 1. Review the acceptance criteria.
 2. Confirm each applicable criterion is genuinely complete, using
    `tasks_update_acceptance_criteria`.
-3. Record any final meaningful progress.
-4. Call `tasks_complete`.
+3. Attach or review evidence for each criterion where evidence is available.
+4. Record any final meaningful progress and checkpoint.
+5. Call `tasks_complete`.
 
 Completion is rejected while incomplete criteria or active blockers remain. Only pass
 `force: true` when a criterion is genuinely obsolete or intentionally excluded, and
@@ -154,7 +175,7 @@ the handover.
 
 Before ending work on an incomplete claimed task:
 
-1. Record meaningful current progress.
+1. Record a `tasks_checkpoint` with completed work, current work, next action and uncertainty.
 2. Update task context if a future agent needs new working knowledge.
 3. Record significant decisions.
 4. Record blockers.
@@ -170,23 +191,26 @@ Before ending work on an incomplete claimed task:
 | Find work | `tasks_list`, `tasks_get` |
 | Manage work | `tasks_create`, `tasks_update`, `tasks_update_context` |
 | Leases | `tasks_claim`, `tasks_release_claim` |
+| Execution continuity | `tasks_heartbeat`, `tasks_execution_get`, `tasks_checkpoint`, `tasks_work_plan` |
 | Record work | `tasks_add_progress`, `tasks_add_acceptance_criteria`, `tasks_update_acceptance_criteria`, `tasks_complete` |
+| Proof | `tasks_add_criterion_evidence` |
 | Obstacles | `tasks_add_blocker`, `tasks_resolve_blocker` |
 | Ordering | `tasks_add_dependency`, `tasks_remove_dependency` |
 | Knowledge | `decisions_create`, `decisions_list` |
 | External resources | `links_add`, `links_list`, `links_remove` |
 | History | `activity_list` |
+| Attention | `attention_list` |
 
 Always pass `actor` (your agent name, e.g. `claude-code`) and `session_id` so claims,
 progress and decisions are attributable and your lease renews correctly.
 
-If the MCP tools are unavailable, the same operations exist on the `aw` CLI, and every
+If the MCP tools are unavailable, the same operations exist on the `ac` CLI, and every
 read command supports `--json`:
 
 ```
-aw project list --json
-aw task list PRJ-0001 --actionable --json
-aw task show TASK-0001 --json
-aw task claim TASK-0001 --actor claude-code --session abc123
-aw task progress TASK-0001 "Data model implemented"
+ac project list --json
+ac task list PRJ-0001 --actionable --json
+ac task show TASK-0001 --json
+ac task claim TASK-0001 --actor claude-code --session abc123
+ac task progress TASK-0001 "Data model implemented"
 ```

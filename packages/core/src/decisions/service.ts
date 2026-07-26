@@ -1,10 +1,10 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type CreateDecisionInput,
   type Decision,
   type ListDecisionsQuery,
-} from "@agent-workspace/contracts";
-import { decisions, type TaskRow } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import { decisions, type TaskRow } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { ClaimService } from "../claims/service.js";
@@ -29,7 +29,7 @@ export function createDecisionService(
         if (input.task) {
           task = requireTask(runtime, input.task);
           if (task.projectId !== project.id) {
-            throw new AgentWorkspaceError(
+            throw new AgentContinuityError(
               "VALIDATION_ERROR",
               `${task.key} belongs to a different project and cannot scope a decision on ${project.key}.`,
               { task: task.key, project: project.key },
@@ -39,7 +39,7 @@ export function createDecisionService(
 
         const superseded = input.supersedes ? requireDecision(runtime, input.supersedes) : null;
         if (superseded && superseded.projectId !== project.id) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "VALIDATION_ERROR",
             `${superseded.key} belongs to a different project.`,
             { decision: superseded.key },

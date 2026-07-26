@@ -1,8 +1,8 @@
-import type { WorkspaceConfig } from "@agent-workspace/config";
+import type { WorkspaceConfig } from "@agent-continuity/config";
 import { createWorkspace, type Workspace } from "./workspace.js";
 
 export const TEST_CONFIG: WorkspaceConfig = {
-  dataDir: "/tmp/agent-workspace-test",
+  dataDir: "/tmp/agent-continuity-test",
   databasePath: ":memory:",
   server: { host: "127.0.0.1", hosts: ["127.0.0.1"], port: 4732 },
   claims: { defaultTtlMinutes: 30 },

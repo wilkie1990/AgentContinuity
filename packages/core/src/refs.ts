@@ -1,4 +1,4 @@
-import { AgentWorkspaceError, isUuid, normaliseKey } from "@agent-workspace/contracts";
+import { AgentContinuityError, isUuid, normaliseKey } from "@agent-continuity/contracts";
 import {
   acceptanceCriteria,
   blockers,
@@ -12,7 +12,7 @@ import {
   type LinkRow,
   type ProjectRow,
   type TaskRow,
-} from "@agent-workspace/database";
+} from "@agent-continuity/database";
 import { eq, or } from "drizzle-orm";
 import type { Runtime } from "./runtime.js";
 
@@ -37,7 +37,7 @@ export function findProject(runtime: Runtime, ref: string): ProjectRow | undefin
 export function requireProject(runtime: Runtime, ref: string): ProjectRow {
   const project = findProject(runtime, ref);
   if (!project) {
-    throw new AgentWorkspaceError("PROJECT_NOT_FOUND", `No project matches "${ref}".`, { ref });
+    throw new AgentContinuityError("PROJECT_NOT_FOUND", `No project matches "${ref}".`, { ref });
   }
   return project;
 }
@@ -51,7 +51,7 @@ export function requireWritableProject(runtime: Runtime, ref: string): ProjectRo
 
 export function assertWritable(project: ProjectRow): void {
   if (project.status === "archived") {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "PROJECT_ARCHIVED",
       `${project.key} is archived and cannot be modified.`,
       { project: project.key },
@@ -71,7 +71,7 @@ export function findTask(runtime: Runtime, ref: string): TaskRow | undefined {
 export function requireTask(runtime: Runtime, ref: string): TaskRow {
   const task = findTask(runtime, ref);
   if (!task) {
-    throw new AgentWorkspaceError("TASK_NOT_FOUND", `No task matches "${ref}".`, { ref });
+    throw new AgentContinuityError("TASK_NOT_FOUND", `No task matches "${ref}".`, { ref });
   }
   return task;
 }
@@ -84,7 +84,7 @@ export function requireBlocker(runtime: Runtime, ref: string): BlockerRow {
     .where(key ? or(eq(blockers.id, id), eq(blockers.key, key)) : eq(blockers.id, id))
     .get();
   if (!blocker) {
-    throw new AgentWorkspaceError("BLOCKER_NOT_FOUND", `No blocker matches "${ref}".`, { ref });
+    throw new AgentContinuityError("BLOCKER_NOT_FOUND", `No blocker matches "${ref}".`, { ref });
   }
   return blocker;
 }
@@ -97,7 +97,7 @@ export function requireDecision(runtime: Runtime, ref: string): DecisionRow {
     .where(key ? or(eq(decisions.id, id), eq(decisions.key, key)) : eq(decisions.id, id))
     .get();
   if (!decision) {
-    throw new AgentWorkspaceError("DECISION_NOT_FOUND", `No decision matches "${ref}".`, { ref });
+    throw new AgentContinuityError("DECISION_NOT_FOUND", `No decision matches "${ref}".`, { ref });
   }
   return decision;
 }
@@ -110,7 +110,7 @@ export function requireLink(runtime: Runtime, ref: string): LinkRow {
     .where(key ? or(eq(links.id, id), eq(links.key, key)) : eq(links.id, id))
     .get();
   if (!link) {
-    throw new AgentWorkspaceError("LINK_NOT_FOUND", `No link matches "${ref}".`, { ref });
+    throw new AgentContinuityError("LINK_NOT_FOUND", `No link matches "${ref}".`, { ref });
   }
   return link;
 }
@@ -123,7 +123,7 @@ export function requireCriterionById(runtime: Runtime, id: string): AcceptanceCr
     .where(eq(acceptanceCriteria.id, id.trim()))
     .get();
   if (!row) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "ACCEPTANCE_CRITERION_NOT_FOUND",
       `No acceptance criterion matches "${id}".`,
       { ref: id },
@@ -151,7 +151,7 @@ export function requireCriterion(
     rows.find((row) => row.description.trim().toLowerCase() === trimmed.toLowerCase());
 
   if (!match) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "ACCEPTANCE_CRITERION_NOT_FOUND",
       `No acceptance criterion matches "${ref}" on this task.`,
       { ref },

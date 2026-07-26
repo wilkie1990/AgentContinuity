@@ -1,5 +1,5 @@
-import type { TaskStatus } from "@agent-workspace/contracts";
-import { tasks, type TaskRow } from "@agent-workspace/database";
+import type { TaskStatus } from "@agent-continuity/contracts";
+import { tasks, type TaskRow } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { Runtime } from "../runtime.js";

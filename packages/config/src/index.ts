@@ -19,6 +19,7 @@ export {
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_PORT = 4732;
 export const DEFAULT_CLAIM_TTL_MINUTES = 30;
+export const DATA_DIR_NAME = ".agent-continuity";
 
 export type WorkspaceConfig = {
   dataDir: string;
@@ -45,7 +46,7 @@ type ConfigFile = {
 };
 
 export function defaultDataDir(): string {
-  return join(homedir(), ".agent-workspace");
+  return join(homedir(), DATA_DIR_NAME);
 }
 
 function readConfigFile(dataDir: string): ConfigFile {
@@ -57,7 +58,7 @@ function readConfigFile(dataDir: string): ConfigFile {
     return {};
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to read Agent Workspace config at ${path}: ${reason}`);
+    throw new Error(`Failed to read Agent Continuity config at ${path}: ${reason}`);
   }
 }
 
@@ -76,7 +77,7 @@ export type ConfigOverrides = Partial<Omit<WorkspaceConfig, "server" | "claims">
 };
 
 /**
- * Resolution order, lowest precedence first: built-in defaults, ~/.agent-workspace/config.json,
+ * Resolution order, lowest precedence first: built-in defaults, ~/.agent-continuity/config.json,
  * environment variables, then explicit overrides passed by the caller.
  *
  * `server.host` additionally accepts the alias "tailscale", which is resolved here to the
@@ -85,27 +86,28 @@ export type ConfigOverrides = Partial<Omit<WorkspaceConfig, "server" | "claims">
  * startup banner, and this process's own API client — agrees on one concrete address.
  */
 export function resolveConfig(overrides: ConfigOverrides = {}, env: NodeJS.ProcessEnv = process.env): WorkspaceConfig {
+  const builtInDataDir = defaultDataDir();
   const dataDir = resolve(
     overrides.dataDir ??
-      env.AGENT_WORKSPACE_DATA_DIR ??
-      readConfigFile(defaultDataDir()).dataDir ??
-      defaultDataDir(),
+      env.AGENT_CONTINUITY_DATA_DIR ??
+      readConfigFile(builtInDataDir).dataDir ??
+      builtInDataDir,
   );
 
   const file = readConfigFile(dataDir);
 
-  const rawHost = overrides.server?.host ?? env.AGENT_WORKSPACE_HOST ?? file.server?.host ?? DEFAULT_HOST;
+  const rawHost = overrides.server?.host ?? env.AGENT_CONTINUITY_HOST ?? file.server?.host ?? DEFAULT_HOST;
   const hosts = resolveHostList(rawHost);
   // Prefer loopback as the "primary" address so a CLI run on this machine keeps working
   // even when the server is also listening on a tailnet address.
   const host = hosts.find(isLoopbackHost) ?? hosts[0] ?? DEFAULT_HOST;
   const port =
     overrides.server?.port ??
-    intFromEnv(env.AGENT_WORKSPACE_PORT, file.server?.port ?? DEFAULT_PORT, "AGENT_WORKSPACE_PORT");
+    intFromEnv(env.AGENT_CONTINUITY_PORT, file.server?.port ?? DEFAULT_PORT, "AGENT_CONTINUITY_PORT");
 
   const rawDatabasePath =
     overrides.databasePath ??
-    env.AGENT_WORKSPACE_DATABASE_PATH ??
+    env.AGENT_CONTINUITY_DATABASE_PATH ??
     file.databasePath ??
     join(dataDir, "workspace.db");
 
@@ -117,9 +119,9 @@ export function resolveConfig(overrides: ConfigOverrides = {}, env: NodeJS.Proce
   const defaultTtlMinutes =
     overrides.claims?.defaultTtlMinutes ??
     intFromEnv(
-      env.AGENT_WORKSPACE_CLAIM_TTL_MINUTES,
+      env.AGENT_CONTINUITY_CLAIM_TTL_MINUTES,
       file.claims?.defaultTtlMinutes ?? DEFAULT_CLAIM_TTL_MINUTES,
-      "AGENT_WORKSPACE_CLAIM_TTL_MINUTES",
+      "AGENT_CONTINUITY_CLAIM_TTL_MINUTES",
     );
 
   return {
@@ -127,10 +129,10 @@ export function resolveConfig(overrides: ConfigOverrides = {}, env: NodeJS.Proce
     databasePath,
     server: { host, hosts, port },
     claims: { defaultTtlMinutes },
-    logLevel: overrides.logLevel ?? env.AGENT_WORKSPACE_LOG_LEVEL ?? file.logLevel ?? "info",
+    logLevel: overrides.logLevel ?? env.AGENT_CONTINUITY_LOG_LEVEL ?? file.logLevel ?? "info",
     baseUrl:
       overrides.baseUrl ??
-      env.AGENT_WORKSPACE_URL ??
+      env.AGENT_CONTINUITY_URL ??
       `http://${isUnspecifiedHost(host) ? DEFAULT_HOST : host}:${port}`,
   };
 }

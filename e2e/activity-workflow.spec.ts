@@ -15,8 +15,14 @@ test("project mutations appear in the activity timeline in reverse chronological
   await page.keyboard.press("Escape");
 
   await tab(page, "Project Context").click();
-  await page.getByLabel("Project context").fill("Project state persists between agents.");
+  await page.getByRole("button", { name: "Edit context", exact: true }).click();
+  await page
+    .getByLabel("Project context", { exact: true })
+    .fill("Project state persists between agents.");
   await page.getByRole("button", { name: "Save context" }).click();
+  await expect(page.getByRole("region", { name: "Project context preview" })).toContainText(
+    "Project state persists between agents.",
+  );
   await expect(page.getByText(/38 characters/)).toBeVisible();
 
   await tab(page, "Activity").click();

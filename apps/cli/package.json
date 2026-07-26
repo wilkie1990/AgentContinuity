@@ -1,12 +1,12 @@
 {
-  "name": "@agent-workspace/cli",
+  "name": "@agent-continuity/cli",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "aw": "./dist/bin.js"
+    "ac": "./dist/bin.js"
   },
   "files": [
     "dist"
@@ -17,12 +17,12 @@
     "dev": "tsx src/bin.ts"
   },
   "dependencies": {
-    "@agent-workspace/client": "workspace:*",
-    "@agent-workspace/config": "workspace:*",
-    "@agent-workspace/contracts": "workspace:*",
-    "@agent-workspace/core": "workspace:*",
-    "@agent-workspace/mcp": "workspace:*",
-    "@agent-workspace/server": "workspace:*",
+    "@agent-continuity/client": "workspace:*",
+    "@agent-continuity/config": "workspace:*",
+    "@agent-continuity/contracts": "workspace:*",
+    "@agent-continuity/core": "workspace:*",
+    "@agent-continuity/mcp": "workspace:*",
+    "@agent-continuity/server": "workspace:*",
     "commander": "^15.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0"
   }

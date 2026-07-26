@@ -1,5 +1,5 @@
-import { AgentWorkspaceError, type HealthResponse } from "@agent-workspace/contracts";
-import type { Workspace } from "@agent-workspace/core";
+import { AgentContinuityError, type HealthResponse } from "@agent-continuity/contracts";
+import type { Workspace } from "@agent-continuity/core";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -92,7 +92,7 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
       return reply.sendFile("index.html");
     }
     return reply.status(404).send(
-      new AgentWorkspaceError(
+      new AgentContinuityError(
         "VALIDATION_ERROR",
         `No route matches ${request.method} ${request.url}.`,
       ).toBody(),

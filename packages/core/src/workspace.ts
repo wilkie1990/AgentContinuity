@@ -1,9 +1,10 @@
-import { resolveConfig, type WorkspaceConfig } from "@agent-workspace/config";
-import { createDatabase, type DatabaseHandle } from "@agent-workspace/database";
+import { resolveConfig, type WorkspaceConfig } from "@agent-continuity/config";
+import { createDatabase, type DatabaseHandle } from "@agent-continuity/database";
 import { createActivityService, type ActivityService } from "./activity/service.js";
 import { createBlockerService, type BlockerService } from "./blockers/service.js";
 import { createClaimService, type ClaimService } from "./claims/service.js";
 import { createDecisionService, type DecisionService } from "./decisions/service.js";
+import { createExecutionService, type ExecutionService } from "./executions/service.js";
 import { createLinkService, type LinkService } from "./links/service.js";
 import { createProjectService, type ProjectService } from "./projects/service.js";
 import { Runtime, type Clock } from "./runtime.js";
@@ -20,6 +21,7 @@ export type Workspace = {
   decisions: DecisionService;
   links: LinkService;
   activity: ActivityService;
+  executions: ExecutionService;
   close(): void;
 };
 
@@ -46,12 +48,13 @@ export function createWorkspace(options: CreateWorkspaceOptions = {}): Workspace
   });
 
   const activity = createActivityService(runtime);
-  const claims = createClaimService(runtime, activity);
-  const tasks = createTaskService(runtime, activity, claims);
+  const executions = createExecutionService(runtime, activity);
+  const claims = createClaimService(runtime, activity, executions);
+  const tasks = createTaskService(runtime, activity, claims, executions);
   const blockers = createBlockerService(runtime, activity, claims);
   const decisions = createDecisionService(runtime, activity, claims);
   const links = createLinkService(runtime, activity, claims);
-  const projects = createProjectService(runtime, activity, tasks, decisions, links);
+  const projects = createProjectService(runtime, activity, tasks, claims, decisions, links);
 
   return {
     config,
@@ -64,6 +67,7 @@ export function createWorkspace(options: CreateWorkspaceOptions = {}): Workspace
     decisions,
     links,
     activity,
+    executions,
     close() {
       database.close();
     },

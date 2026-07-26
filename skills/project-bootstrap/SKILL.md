@@ -1,6 +1,6 @@
 ---
 name: project-bootstrap
-description: Convert a conversation, specification, plan, issue, or body of work into a structured Agent Workspace project in one atomic operation - project, context, tasks, acceptance criteria, dependencies, decisions and links. Use when the user says "create a project from this", "turn this into tasks", "let's plan this properly", or when substantial planned work should persist beyond the current conversation.
+description: Convert a conversation, specification, plan, issue, or body of work into a structured Agent Continuity project in one atomic operation - project, context, tasks, acceptance criteria, dependencies, decisions and links. Use when the user says "create a project from this", "turn this into tasks", "let's plan this properly", or when substantial planned work should persist beyond the current conversation.
 ---
 
 # Project bootstrap
@@ -38,7 +38,7 @@ The intended outcome, in one sentence.
 
 Good: `Build a local-first persistent execution workspace for AI agents.`
 
-Bad: `Work on Agent Workspace.`
+Bad: `Work on Agent Continuity.`
 
 ### Description
 
@@ -119,7 +119,7 @@ are temporary labels used only inside the request; the service returns the real 
 
 ```json
 {
-  "name": "Agent Workspace",
+  "name": "Agent Continuity",
   "objective": "Build a local-first persistent execution workspace for AI agents",
   "context": "The conversation is temporary. The agent is replaceable. Project state persists.\nThe core service must remain domain agnostic.",
   "tasks": [
@@ -150,7 +150,7 @@ are temporary labels used only inside the request; the service returns the real 
     }
   ],
   "links": [
-    { "type": "repository", "provider": "github", "reference": "agent-workspace" }
+    { "type": "repository", "provider": "github", "reference": "agent-continuity" }
   ],
   "actor": "claude-code",
   "session_id": "<this session>"
@@ -160,5 +160,5 @@ are temporary labels used only inside the request; the service returns the real 
 ## After bootstrapping
 
 Report the created project key and the task keys to the user, then switch to the
-`agent-workspace` skill for the actual work: pick an actionable task, claim it, and
+`agent-continuity` skill for the actual work: pick an actionable task, claim it, and
 record progress as you go.

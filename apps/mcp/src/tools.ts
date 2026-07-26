@@ -1,14 +1,16 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   taskPrioritySchema,
   taskStatusSchema,
   type ProjectStatus,
-} from "@agent-workspace/contracts";
-import type { Workspace } from "@agent-workspace/core";
+} from "@agent-continuity/contracts";
+import type { Workspace } from "@agent-continuity/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   renderActivityLine,
+  renderAttention,
+  renderCheckpoints,
   renderCriteria,
   renderDecisionLine,
   renderLinkLine,
@@ -18,6 +20,7 @@ import {
   renderTaskDetail,
   renderTaskList,
   renderTaskLine,
+  renderWorkPlan,
 } from "./format.js";
 
 type ToolResult = {
@@ -37,7 +40,7 @@ function guard(handler: () => string): ToolResult {
   try {
     return text(handler());
   } catch (error) {
-    if (AgentWorkspaceError.is(error)) {
+    if (AgentContinuityError.is(error)) {
       const details = Object.keys(error.details).length > 0 ? `\n${JSON.stringify(error.details)}` : "";
       return { content: [{ type: "text", text: `${error.code}: ${error.message}${details}` }], isError: true };
     }
@@ -267,6 +270,35 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       }),
   );
 
+  server.registerTool(
+    "projects_delete",
+    {
+      title: "Delete project",
+      description:
+        "Permanently delete a project and everything it owns: every task and everything each task owns, plus the project's own decisions, links and activity history. This cannot be undone and there is nowhere for the deletion itself to be recorded once it happens. Archiving is almost always the right choice — it hides a finished project reversibly. Only use this for a project that should never have existed, such as one created by mistake or during verification.",
+      inputSchema: {
+        project: z.string(),
+        force: z
+          .boolean()
+          .optional()
+          .describe("Required to delete a project that has a task another agent currently holds a claim on"),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() => {
+        const deleted = workspace.projects.delete(input.project, {
+          force: input.force ?? false,
+          ...meta(input),
+        });
+        const { removed } = deleted;
+        return [
+          `Deleted ${deleted.key} — ${deleted.name}.`,
+          `Removed ${removed.tasks} tasks, ${removed.acceptanceCriteria} acceptance criteria, ${removed.progress} progress entries, ${removed.blockers} blockers, ${removed.claims} claims, ${removed.dependencies} dependencies, ${removed.decisions} decisions, ${removed.links} links and ${removed.activityEvents} activity events.`,
+        ].join("\n");
+      }),
+  );
+
   // ------------------------------------------------------------------- tasks
 
   server.registerTool(
@@ -447,6 +479,96 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
   );
 
   server.registerTool(
+    "tasks_heartbeat",
+    {
+      title: "Heartbeat task execution",
+      description: "Silently refresh a claimed task's execution liveness. Use while actively working, but do not use this as progress reporting or narrate ordinary commands.",
+      inputSchema: { task: z.string(), actor: z.string().min(1), session_id: z.string().optional(), phase: z.string().optional() },
+    },
+    (input) => guard(() => {
+      workspace.claims.heartbeat(input.task, { actor: input.actor, ...(input.session_id ? { sessionId: input.session_id } : {}), ...(input.phase ? { phase: input.phase } : {}) });
+      return "Heartbeat recorded.";
+    }),
+  );
+
+  server.registerTool(
+    "tasks_execution_get",
+    {
+      title: "Get execution continuity state",
+      description: "Read execution health, meaningful checkpoints, work plan, and the latest handoff. Task status and execution health are distinct.",
+      inputSchema: { task: z.string() },
+    },
+    (input) => guard(() => {
+      const state = workspace.executions.forTask(input.task);
+      return [
+        `Execution: ${state.execution ? `${state.execution.actor} — ${state.execution.health}` : "none"}`,
+        `Checkpoints:\n${renderCheckpoints(state.checkpoints).join("\n") || "none"}`,
+        `Work plan:\n${renderWorkPlan(state.workPlan).join("\n") || "none"}`,
+        `Handoff: ${state.handoff ? `${state.handoff.summary}${state.handoff.nextAction ? `; next: ${state.handoff.nextAction}` : ""}` : "none"}`,
+      ].join("\n");
+    }),
+  );
+
+  server.registerTool(
+    "tasks_checkpoint",
+    {
+      title: "Record a meaningful checkpoint",
+      description: "Record what is completed, what is being worked on, and the next action at a phase boundary or before handoff. Do not use for routine command-by-command narration.",
+      inputSchema: { task: z.string(), completed: z.string().min(1), working_on: z.string().min(1), next: z.string().min(1), uncertainty: z.string().nullable().optional(), ...actorShape },
+    },
+    (input) => guard(() => {
+      const checkpoint = workspace.executions.checkpoint(input.task, { completed: input.completed, workingOn: input.working_on, next: input.next, ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}), ...meta(input) });
+      return `Checkpoint recorded for ${checkpoint.taskId}.`;
+    }),
+  );
+
+  server.registerTool(
+    "tasks_work_plan",
+    {
+      title: "Set or update a task work plan",
+      description: "Set a lightweight ordered implementation plan, or update one item's execution status. Plans describe work phases, not acceptance criteria.",
+      inputSchema: { task: z.string(), items: z.array(z.string().min(1)).min(1).optional(), item: z.string().optional(), status: z.enum(["pending", "active", "completed", "skipped"]).optional(), ...actorShape },
+    },
+    (input) => guard(() => {
+      if (input.items) return `Work plan updated.\n${renderWorkPlan(workspace.executions.setWorkPlan(input.task, { items: input.items, ...meta(input) }))}`;
+      if (input.item && input.status) return `Work-plan item updated: ${workspace.executions.updateWorkPlanItem(input.task, input.item, { status: input.status, ...meta(input) }).title}`;
+      return `Work plan:\n${renderWorkPlan(workspace.executions.workPlan(input.task)).join("\n") || "none"}`;
+    }),
+  );
+
+  server.registerTool(
+    "tasks_add_criterion_evidence",
+    {
+      title: "Attach acceptance-criterion evidence",
+      description: "Attach test output, a file reference, result, or URL that proves one acceptance criterion. Add evidence as it is proven rather than only at completion.",
+      inputSchema: { task: z.string(), criterion: z.string(), type: z.string().min(1), reference: z.string().nullable().optional(), content: z.string().nullable().optional(), url: z.string().url().nullable().optional(), ...actorShape },
+    },
+    (input) => guard(() => {
+      const evidence = workspace.executions.addEvidence(input.task, input.criterion, { type: input.type, ...(input.reference !== undefined ? { reference: input.reference } : {}), ...(input.content !== undefined ? { content: input.content } : {}), ...(input.url !== undefined ? { url: input.url } : {}), ...meta(input) });
+      return `Evidence ${evidence.id} attached.`;
+    }),
+  );
+
+  server.registerTool(
+    "tasks_add_execution_origin",
+    {
+      title: "Link an execution to its origin",
+      description: "Record the Codex thread or external agent session that originated this execution, so a later agent can find the source conversation without coupling task state to one provider.",
+      inputSchema: { task: z.string(), provider: z.string().min(1), reference: z.string().min(1), url: z.string().url().nullable().optional(), metadata: z.record(z.string(), z.unknown()).nullable().optional() },
+    },
+    (input) => guard(() => {
+      const origin = workspace.executions.addOrigin(input.task, { provider: input.provider, reference: input.reference, ...(input.url !== undefined ? { url: input.url } : {}), ...(input.metadata !== undefined ? { metadata: input.metadata } : {}) });
+      return `Execution origin recorded: ${origin.provider} ${origin.reference}.`;
+    }),
+  );
+
+  server.registerTool(
+    "attention_list",
+    { title: "List work needing attention", description: "List stale or interrupted execution, expired claims, blockers, review work, and handoffs that require action.", inputSchema: {} },
+    () => guard(() => renderAttention(workspace.executions.needsAttention())),
+  );
+
+  server.registerTool(
     "tasks_add_progress",
     {
       title: "Add task progress",
@@ -527,7 +649,7 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
     (input) =>
       guard(() => {
         if (input.force && !input.reason) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "VALIDATION_ERROR",
             "A reason is required when forcing completion.",
           );

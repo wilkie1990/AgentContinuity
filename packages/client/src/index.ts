@@ -1,5 +1,5 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type AcceptanceCriterion,
   type ActivityPage,
   type AddBlockerInput,
@@ -14,6 +14,7 @@ import {
   type CreateProjectInput,
   type CreateTaskInput,
   type Decision,
+  type DeletedProject,
   type DeletedTask,
   type ErrorBody,
   type HealthResponse,
@@ -30,13 +31,26 @@ import {
   type ReleaseClaimInput,
   type RenewClaimInput,
   type TaskClaim,
+  type TaskCheckpoint,
+  type TaskExecution,
+  type TaskHandoff,
+  type WorkPlanItem,
+  type CriterionEvidence,
+  type ExecutionOrigin,
+  type NeedsAttentionItem,
+  type HeartbeatInput,
+  type CheckpointInput,
+  type WorkPlanInput,
+  type UpdateWorkPlanItemInput,
+  type CriterionEvidenceInput,
+  type ExecutionOriginInput,
   type TaskDetail,
   type TaskSummary,
   type UpdateProjectContextInput,
   type UpdateProjectInput,
   type UpdateTaskContextInput,
   type UpdateTaskInput,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -72,13 +86,21 @@ function isErrorBody(value: unknown): value is ErrorBody {
   );
 }
 
-export type AgentWorkspaceClient = ReturnType<typeof createAgentWorkspaceClient>;
+export type AgentContinuityClient = ReturnType<typeof createAgentContinuityClient>;
+
+/** Continuity state returned alongside the active (or most recent) execution. */
+export type TaskExecutionState = {
+  execution: TaskExecution | null;
+  checkpoints: TaskCheckpoint[];
+  workPlan: WorkPlanItem[];
+  handoff: TaskHandoff | null;
+};
 
 /**
  * Typed HTTP client shared by the CLI and the web application, so both exercise the
  * same public API surface the agents use.
  */
-export function createAgentWorkspaceClient(options: ClientOptions) {
+export function createAgentContinuityClient(options: ClientOptions) {
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const doFetch: FetchLike = options.fetch ?? ((input, init) => fetch(input, init));
 
@@ -102,9 +124,9 @@ export function createAgentWorkspaceClient(options: ClientOptions) {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (error) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "INTERNAL_ERROR",
-        `Could not reach Agent Workspace at ${baseUrl}. Is the server running? (aw server)`,
+        `Could not reach Agent Continuity at ${baseUrl}. Is the server running? (ac server)`,
         { cause: error instanceof Error ? error.message : String(error) },
       );
     }
@@ -116,9 +138,9 @@ export function createAgentWorkspaceClient(options: ClientOptions) {
 
     if (!response.ok) {
       if (isErrorBody(payload)) {
-        throw new AgentWorkspaceError(payload.error.code, payload.error.message, payload.error.details);
+        throw new AgentContinuityError(payload.error.code, payload.error.message, payload.error.details);
       }
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "INTERNAL_ERROR",
         `Request failed with status ${response.status}.`,
         { status: response.status },
@@ -181,6 +203,14 @@ export function createAgentWorkspaceClient(options: ClientOptions) {
           })
         ).project;
       },
+      async remove(
+        project: string,
+        input: { force?: boolean; actor?: string } = {},
+      ): Promise<DeletedProject> {
+        return (
+          await request<{ deleted: DeletedProject }>("DELETE", api(`/projects/${project}`), input)
+        ).deleted;
+      },
     },
 
     tasks: {
@@ -240,6 +270,37 @@ export function createAgentWorkspaceClient(options: ClientOptions) {
         input: ReleaseClaimInput = {},
       ): Promise<{ claim: TaskClaim; task: TaskSummary }> {
         return request("POST", api(`/tasks/${task}/claim/release`), input);
+      },
+      /** Refresh execution liveness without creating a progress-feed entry. */
+      heartbeat(task: string, input: HeartbeatInput): Promise<{ claim: TaskClaim; execution: TaskExecution | null }> {
+        return request("POST", api(`/tasks/${task}/heartbeat`), input);
+      },
+      execution(task: string): Promise<TaskExecutionState> {
+        return request<TaskExecutionState>("GET", api(`/tasks/${task}/execution`));
+      },
+      async checkpoint(task: string, input: CheckpointInput): Promise<TaskCheckpoint> {
+        return (await request<{ checkpoint: TaskCheckpoint }>("POST", api(`/tasks/${task}/checkpoints`), input)).checkpoint;
+      },
+      async checkpoints(task: string): Promise<TaskCheckpoint[]> {
+        return (await request<{ checkpoints: TaskCheckpoint[] }>("GET", api(`/tasks/${task}/checkpoints`))).checkpoints;
+      },
+      async setWorkPlan(task: string, input: WorkPlanInput): Promise<WorkPlanItem[]> {
+        return (await request<{ workPlan: WorkPlanItem[] }>("PUT", api(`/tasks/${task}/work-plan`), input)).workPlan;
+      },
+      async workPlan(task: string): Promise<WorkPlanItem[]> {
+        return (await request<{ workPlan: WorkPlanItem[] }>("GET", api(`/tasks/${task}/work-plan`))).workPlan;
+      },
+      async updateWorkPlanItem(task: string, item: string, input: UpdateWorkPlanItemInput): Promise<WorkPlanItem> {
+        return (await request<{ item: WorkPlanItem }>("PATCH", api(`/tasks/${task}/work-plan/${item}`), input)).item;
+      },
+      async addCriterionEvidence(task: string, criterion: string, input: CriterionEvidenceInput): Promise<CriterionEvidence> {
+        return (await request<{ evidence: CriterionEvidence }>("POST", api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence`), input)).evidence;
+      },
+      async criterionEvidence(task: string, criterion: string): Promise<CriterionEvidence[]> {
+        return (await request<{ evidence: CriterionEvidence[] }>("GET", api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence`))).evidence;
+      },
+      async addExecutionOrigin(task: string, input: ExecutionOriginInput): Promise<ExecutionOrigin> {
+        return (await request<{ origin: ExecutionOrigin }>("POST", api(`/tasks/${task}/execution/origins`), input)).origin;
       },
       async addProgress(task: string, input: AddProgressInput): Promise<ProgressEntry> {
         return (
@@ -373,7 +434,13 @@ export function createAgentWorkspaceClient(options: ClientOptions) {
         });
       },
     },
+
+    attention: {
+      async list(): Promise<NeedsAttentionItem[]> {
+        return (await request<{ items: NeedsAttentionItem[] }>("GET", api("/attention"))).items;
+      },
+    },
   };
 }
 
-export { AgentWorkspaceError };
+export { AgentContinuityError };

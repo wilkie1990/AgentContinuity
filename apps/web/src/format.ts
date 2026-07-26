@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@agent-workspace/contracts";
+import type { TaskStatus } from "@agent-continuity/contracts";
 
 export const BOARD_COLUMNS: { status: TaskStatus; label: string }[] = [
   { status: "backlog", label: "Backlog" },
@@ -59,6 +59,12 @@ const EVENT_SENTENCES: Record<string, string> = {
   "task.claim_renewed": "renewed the claim on",
   "task.claim_released": "released the claim on",
   "task.claim_expired": "let the claim lapse on",
+  "execution.started": "started an execution on",
+  "execution.resumed": "resumed an execution on",
+  "execution.ended": "ended an execution on",
+  "task.checkpointed": "recorded a checkpoint on",
+  "work_plan.updated": "updated the work plan on",
+  "criterion_evidence.added": "added acceptance evidence to",
   "task.progress_added": "added progress to",
   "task.blocked": "blocked",
   "task.blocker_resolved": "resolved a blocker on",

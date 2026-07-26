@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveConfig } from "@agent-workspace/config";
+import { resolveConfig } from "@agent-continuity/config";
 import { describeRunningServer, startServer } from "./start.js";
 
 const config = resolveConfig();

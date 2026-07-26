@@ -13,3 +13,8 @@ playwright-report/
 .env
 .env.local
 .vite/
+
+# Local-only Remotion/video production workspace and deliverables.
+apps/video/
+docs/video/
+scripts/video/

@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workspace/database",
+  "name": "@agent-continuity/database",
   "version": "0.1.0",
   "private": true,
   "type": "module",

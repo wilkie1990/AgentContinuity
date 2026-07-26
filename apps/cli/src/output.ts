@@ -6,7 +6,7 @@ import type {
   ProjectSummary,
   TaskDetail,
   TaskSummary,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 
 export function print(value: string): void {
   process.stdout.write(`${value}\n`);

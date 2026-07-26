@@ -3,11 +3,13 @@ import { Link, Route, Routes } from "react-router-dom";
 import { NewProjectDialog } from "./components/NewProjectDialog.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { ActivityPage } from "./routes/ActivityPage.js";
+import { AttentionPage } from "./routes/AttentionPage.js";
 import { BoardPage } from "./routes/BoardPage.js";
 import { ContextPage } from "./routes/ContextPage.js";
 import { DecisionsPage } from "./routes/DecisionsPage.js";
 import { LinksPage } from "./routes/LinksPage.js";
 import { ProjectListPage } from "./routes/ProjectListPage.js";
+import { ProjectAttentionPage } from "./routes/ProjectAttentionPage.js";
 
 export function App() {
   const [creating, setCreating] = useState(false);
@@ -28,10 +30,10 @@ export function App() {
             ☰
           </button>
           <Link to="/" className="brand">
-            Agent Workspace
+            Agent Continuity
           </Link>
         </div>
-        <span className="small muted tagline">Persistent project execution for AI agents</span>
+        <span className="small muted tagline">Persistent project execution across agents and sessions.</span>
       </header>
 
       <div className="shell">
@@ -49,6 +51,8 @@ export function App() {
             <Route path="/projects/:project/decisions" element={<DecisionsPage />} />
             <Route path="/projects/:project/links" element={<LinksPage />} />
             <Route path="/projects/:project/activity" element={<ActivityPage />} />
+            <Route path="/projects/:project/attention" element={<ProjectAttentionPage />} />
+            <Route path="/attention" element={<AttentionPage />} />
             <Route
               path="*"
               element={

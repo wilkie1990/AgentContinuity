@@ -1,9 +1,9 @@
-import { createAgentWorkspaceClient } from "@agent-workspace/client";
+import { createAgentContinuityClient } from "@agent-continuity/client";
 import type {
   ListActivityQuery,
   ListTasksQuery,
   ProjectStatus,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 import {
   useMutation,
   useQuery,
@@ -12,7 +12,7 @@ import {
 } from "@tanstack/react-query";
 
 /** Same origin: the server serves the built UI and the API from one port. */
-export const client = createAgentWorkspaceClient({ baseUrl: window.location.origin });
+export const client = createAgentContinuityClient({ baseUrl: window.location.origin });
 
 /**
  * How often live views re-poll the REST API so agent activity shows up
@@ -32,6 +32,10 @@ export const keys = {
   links: (ref: string) => ["links", ref] as const,
   activity: (ref: string, query?: Partial<ListActivityQuery>) =>
     ["activity", ref, query ?? {}] as const,
+  checkpoints: (ref: string) => ["checkpoints", ref] as const,
+  workPlan: (ref: string) => ["work-plan", ref] as const,
+  execution: (ref: string) => ["execution", ref] as const,
+  attention: () => ["attention"] as const,
 };
 
 /** Any mutation can touch derived project counters, so refresh the project scope broadly. */
@@ -42,6 +46,10 @@ function invalidateProject(queryClient: QueryClient, ref: string | undefined): v
   void queryClient.invalidateQueries({ queryKey: ["activity"] });
   void queryClient.invalidateQueries({ queryKey: ["decisions"] });
   void queryClient.invalidateQueries({ queryKey: ["links"] });
+  void queryClient.invalidateQueries({ queryKey: ["checkpoints"] });
+  void queryClient.invalidateQueries({ queryKey: ["work-plan"] });
+  void queryClient.invalidateQueries({ queryKey: ["execution"] });
+  void queryClient.invalidateQueries({ queryKey: ["attention"] });
   if (ref) void queryClient.invalidateQueries({ queryKey: keys.project(ref) });
   void queryClient.invalidateQueries({ queryKey: ["project"] });
 }
@@ -50,6 +58,7 @@ export function useProjects(status?: ProjectStatus[]) {
   return useQuery({
     queryKey: keys.projects(status),
     queryFn: () => client.projects.list({ ...(status ? { status } : {}), limit: 200 }),
+    refetchInterval: LIVE_POLL_MS,
   });
 }
 
@@ -101,6 +110,44 @@ export function useActivity(ref: string | undefined, query: Partial<ListActivity
     queryKey: keys.activity(ref ?? "", query),
     queryFn: () => client.activity.list(ref as string, query),
     enabled: Boolean(ref),
+    refetchInterval: LIVE_POLL_MS,
+  });
+}
+
+/** Structured checkpoints are intentionally separate from progress/activity. */
+export function useCheckpoints(ref: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.checkpoints(ref ?? ""),
+    queryFn: () => client.tasks.checkpoints(ref as string),
+    enabled: Boolean(ref),
+    refetchInterval: LIVE_POLL_MS,
+  });
+}
+
+export function useWorkPlan(ref: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.workPlan(ref ?? ""),
+    queryFn: () => client.tasks.workPlan(ref as string),
+    enabled: Boolean(ref),
+    refetchInterval: LIVE_POLL_MS,
+  });
+}
+
+/** One task-local read for the current execution, its resume checkpoint, plan and handoff. */
+export function useExecutionState(ref: string | null | undefined) {
+  return useQuery({
+    queryKey: keys.execution(ref ?? ""),
+    queryFn: () => client.tasks.execution(ref as string),
+    enabled: Boolean(ref),
+    refetchInterval: LIVE_POLL_MS,
+  });
+}
+
+/** A global inbox, then locally filter it wherever a project-scoped view is needed. */
+export function useAttention() {
+  return useQuery({
+    queryKey: keys.attention(),
+    queryFn: () => client.attention.list(),
     refetchInterval: LIVE_POLL_MS,
   });
 }

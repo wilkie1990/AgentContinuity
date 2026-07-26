@@ -16,7 +16,7 @@ pnpm typecheck        # same, without emitting the web bundle
 pnpm test             # Vitest: core, API and MCP suites
 pnpm test:watch
 pnpm test:e2e         # Playwright, builds the UI and boots a throwaway server
-pnpm seed             # create the Agent Workspace project in the local database
+pnpm seed             # create the Agent Continuity project in the local database
 
 pnpm dev              # tsx watch on the API (serves apps/web/dist when built)
 pnpm dev:web          # Vite dev server on :4733, proxying /api to :4732
@@ -32,7 +32,7 @@ blocks dependency lifecycle scripts unless they are listed in `onlyBuiltDependen
 apps/
   server/   Fastify API, also serves the built web UI
   web/      React + Vite single page application
-  cli/      the `aw` binary
+  cli/      the `ac` binary
   mcp/      MCP server over stdio
 packages/
   core/       domain services — the only place business rules live
@@ -40,7 +40,7 @@ packages/
   contracts/  Zod schemas, DTOs, error codes
   client/     typed HTTP client
   config/     configuration resolution
-skills/       agent-workspace, project-bootstrap
+skills/       agent-continuity, project-bootstrap
 docs/
 e2e/          Playwright specs
 scripts/      seed.ts
@@ -76,7 +76,7 @@ match. The Drizzle schema is used for typed queries; it does not generate the mi
 | MCP contract | `apps/mcp/src/__tests__` | Real `Client` over `InMemoryTransport` |
 | Web workflows | `e2e/` | Playwright against a real server and a real database |
 
-`createTestWorkspace()` from `@agent-workspace/core/testing` gives an isolated in-memory
+`createTestWorkspace()` from `@agent-continuity/core/testing` gives an isolated in-memory
 workspace whose clock you can advance:
 
 ```ts
@@ -86,7 +86,7 @@ workspace.advanceMinutes(31);
 expect(workspace.tasks.getSummary("TASK-0001").claim).toBeNull();
 ```
 
-Vitest resolves `@agent-workspace/*` straight to source through aliases in
+Vitest resolves `@agent-continuity/*` straight to source through aliases in
 `vitest.config.ts`, so no build step is needed before running tests.
 
 `packages/core/src/__tests__/activity.test.ts` asserts that every event type declared in
@@ -101,7 +101,7 @@ emitting it fails the suite.
   duplicate request models.
 - Every state mutation records an activity event.
 - Activity payloads never contain full context values — record lengths instead.
-- Errors are `AgentWorkspaceError` with a code from `ERROR_CODES`; transports translate,
+- Errors are `AgentContinuityError` with a code from `ERROR_CODES`; transports translate,
   they do not invent.
 
 ## Ports

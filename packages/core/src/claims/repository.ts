@@ -1,5 +1,5 @@
-import type { TaskClaim } from "@agent-workspace/contracts";
-import { taskClaims, tasks, type TaskClaimRow } from "@agent-workspace/database";
+import type { TaskClaim } from "@agent-continuity/contracts";
+import { taskClaims, tasks, type TaskClaimRow } from "@agent-continuity/database";
 import { and, desc, eq, gt, inArray, isNull, lte } from "drizzle-orm";
 import { minutesBetween, type Runtime } from "../runtime.js";
 

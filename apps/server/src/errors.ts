@@ -1,4 +1,4 @@
-import { AgentWorkspaceError, httpStatusForErrorCode } from "@agent-workspace/contracts";
+import { AgentContinuityError, httpStatusForErrorCode } from "@agent-continuity/contracts";
 import type { FastifyInstance } from "fastify";
 
 /**
@@ -7,7 +7,7 @@ import type { FastifyInstance } from "fastify";
  */
 export function registerErrorHandling(app: FastifyInstance): void {
   app.setErrorHandler((error, request, reply) => {
-    if (AgentWorkspaceError.is(error)) {
+    if (AgentContinuityError.is(error)) {
       const status = httpStatusForErrorCode(error.code);
       if (status >= 500) request.log.error({ err: error }, "domain error");
       else request.log.info({ code: error.code, message: error.message }, "domain error");
@@ -20,7 +20,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
       return reply
         .status(fastifyError.statusCode)
         .send(
-          new AgentWorkspaceError(
+          new AgentContinuityError(
             "VALIDATION_ERROR",
             fastifyError.message ?? "The request could not be processed.",
           ).toBody(),
@@ -30,6 +30,6 @@ export function registerErrorHandling(app: FastifyInstance): void {
     request.log.error({ err: error }, "unhandled error");
     return reply
       .status(500)
-      .send(new AgentWorkspaceError("INTERNAL_ERROR", "An unexpected error occurred.").toBody());
+      .send(new AgentContinuityError("INTERNAL_ERROR", "An unexpected error occurred.").toBody());
   });
 }

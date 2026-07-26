@@ -10,7 +10,7 @@ export function uniqueName(prefix: string): string {
 /** Creates a project through the human UI and lands on its board. */
 export async function createProject(page: Page, name: string): Promise<void> {
   await page.goto("/");
-  await page.getByRole("button", { name: "+ New project" }).first().click();
+  await page.getByRole("main").getByRole("button", { name: "+ New project" }).click();
 
   const dialog = page.getByRole("dialog", { name: "New project" });
   await dialog.getByLabel("Name").fill(name);

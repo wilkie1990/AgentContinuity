@@ -1,4 +1,4 @@
-import { AgentWorkspaceError } from "@agent-workspace/contracts";
+import { AgentContinuityError } from "@agent-continuity/contracts";
 import type { z } from "zod";
 
 /**
@@ -22,7 +22,7 @@ export function parse<Schema extends z.ZodType>(
     .map((issue) => (issue.path ? `${issue.path}: ${issue.message}` : issue.message))
     .join("; ");
 
-  throw new AgentWorkspaceError("VALIDATION_ERROR", `Invalid request ${source}. ${summary}`, {
+  throw new AgentContinuityError("VALIDATION_ERROR", `Invalid request ${source}. ${summary}`, {
     source,
     issues,
   });

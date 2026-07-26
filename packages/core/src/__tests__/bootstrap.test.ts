@@ -1,9 +1,9 @@
-import { bootstrapProjectSchema } from "@agent-workspace/contracts";
+import { bootstrapProjectSchema } from "@agent-continuity/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkspace, expectErrorCode, type TestWorkspace } from "./helpers.js";
 
 const PLAN = {
-  name: "Agent Workspace",
+  name: "Agent Continuity",
   objective: "Build a persistent execution layer for AI agents",
   context: "The conversation is temporary. The agent is replaceable. Project state persists.",
   actor: "codex",
@@ -31,7 +31,7 @@ const PLAN = {
       taskRef: "claim-model",
     },
   ],
-  links: [{ type: "repository", provider: "github", reference: "agent-workspace" }],
+  links: [{ type: "repository", provider: "github", reference: "agent-continuity" }],
 };
 
 describe("project bootstrap", () => {

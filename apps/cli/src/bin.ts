@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { AgentWorkspaceError } from "@agent-workspace/contracts";
+import { AgentContinuityError } from "@agent-continuity/contracts";
 import { buildProgram } from "./program.js";
 
 try {
   await buildProgram().parseAsync(process.argv);
 } catch (error) {
-  if (AgentWorkspaceError.is(error)) {
+  if (AgentContinuityError.is(error)) {
     process.stderr.write(`${error.code}: ${error.message}\n`);
     if (Object.keys(error.details).length > 0) {
       process.stderr.write(`${JSON.stringify(error.details, null, 2)}\n`);

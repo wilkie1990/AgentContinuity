@@ -1,5 +1,5 @@
 
-Agent Workspace v0.1 Build Specification
+Agent Continuity v0.1 Build Specification
 
 1. Purpose
 
@@ -36,7 +36,7 @@ The conversation is temporary. The agent is replaceable. The project state persi
 
 This specification covers v0.1.
 
-The goal of v0.1 is to prove that Agent Workspace is materially better than using progress.md, TODO.md, or similar persistent Markdown files for multi-session AI agent work.
+The goal of v0.1 is to prove that Agent Continuity is materially better than using progress.md, TODO.md, or similar persistent Markdown files for multi-session AI agent work.
 
 v0.1 must include:
 
@@ -155,7 +155,7 @@ Use a pnpm workspace.
 
 Recommended structure:
 
-agent-workspace/
+agent-continuity/
 ├── apps/
 │   ├── server/
 │   │   ├── src/
@@ -199,7 +199,7 @@ agent-workspace/
 │       └── package.json
 │
 ├── skills/
-│   ├── agent-workspace/
+│   ├── agent-continuity/
 │   │   └── SKILL.md
 │   │
 │   └── project-bootstrap/
@@ -778,7 +778,7 @@ Use:
 
 Configuration:
 
-AGENT_WORKSPACE_CLAIM_TTL_MINUTES
+AGENT_CONTINUITY_CLAIM_TTL_MINUTES
 
 Claim task
 
@@ -1000,7 +1000,7 @@ ref is a temporary reference used only inside the bootstrap request.
 Example:
 
 {
-  "name": "Agent Workspace",
+  "name": "Agent Continuity",
   "tasks": [
     {
       "ref": "task-model",
@@ -1083,7 +1083,7 @@ POST /api/v1/projects
 Request:
 
 {
-  "name": "Agent Workspace",
+  "name": "Agent Continuity",
   "objective": "Build a persistent execution layer for AI agents",
   "description": "...",
   "context": "...",
@@ -1398,7 +1398,7 @@ Request:
   "task": "TASK-0014",
   "type": "issue",
   "provider": "jira",
-  "reference": "AW-42",
+  "reference": "AC-42",
   "url": "https://...",
   "metadata": {
     "status": "In Progress"
@@ -1782,51 +1782,51 @@ Do not expose raw UUIDs unless requested.
 
 Binary:
 
-aw
+ac
 
 Alternative package name may be selected later.
 
 Project commands
 
-aw project create
-aw project list
-aw project show PRJ-0001
-aw project context PRJ-0001
-aw project archive PRJ-0001
+ac project create
+ac project list
+ac project show PRJ-0001
+ac project context PRJ-0001
+ac project archive PRJ-0001
 
 Example:
 
-aw project create \
-  --name "Agent Workspace" \
+ac project create \
+  --name "Agent Continuity" \
   --objective "Build persistent project execution for AI agents"
 
 Task commands
 
-aw task create PRJ-0001
-aw task list PRJ-0001
-aw task show TASK-0001
-aw task claim TASK-0001
-aw task release TASK-0001
-aw task progress TASK-0001 "Core model implemented"
-aw task block TASK-0001 "Need API behaviour clarified"
-aw task complete TASK-0001
+ac task create PRJ-0001
+ac task list PRJ-0001
+ac task show TASK-0001
+ac task claim TASK-0001
+ac task release TASK-0001
+ac task progress TASK-0001 "Core model implemented"
+ac task block TASK-0001 "Need API behaviour clarified"
+ac task complete TASK-0001
 
 Filters:
 
-aw task list PRJ-0001 --status ready
-aw task list PRJ-0001 --actionable
-aw task list PRJ-0001 --blocked
+ac task list PRJ-0001 --status ready
+ac task list PRJ-0001 --actionable
+ac task list PRJ-0001 --blocked
 
 Decisions
 
-aw decision add PRJ-0001
-aw decision list PRJ-0001
+ac decision add PRJ-0001
+ac decision list PRJ-0001
 
 Activity
 
-aw activity PRJ-0001
-aw activity PRJ-0001 --task TASK-0001
-aw activity PRJ-0001 --limit 100
+ac activity PRJ-0001
+ac activity PRJ-0001 --task TASK-0001
+ac activity PRJ-0001 --limit 100
 
 JSON mode
 
@@ -1836,7 +1836,7 @@ All read commands must support:
 
 Example:
 
-aw task show TASK-0001 --json
+ac task show TASK-0001 --json
 
 This gives terminal-capable agents a machine-readable fallback when MCP is unavailable.
 
@@ -1844,7 +1844,7 @@ This gives terminal-capable agents a machine-readable fallback when MCP is unava
 
 37. Web Application
 
-The web application is the human interface to Agent Workspace.
+The web application is the human interface to Agent Continuity.
 
 The UI must consume the REST API.
 
@@ -1859,7 +1859,7 @@ Desktop-first local application.
 Layout:
 
 ┌──────────────────────────────────────────────────────────┐
-│ Agent Workspace                              Settings    │
+│ Agent Continuity                              Settings    │
 ├──────────────┬───────────────────────────────────────────┤
 │              │                                           │
 │ Projects     │ Main Content                              │
@@ -1901,8 +1901,8 @@ Last activity
 
 Example:
 
-Agent Workspace
-Persistent project execution for AI agents
+Agent Continuity
+Persistent project execution across agents and sessions
 ████████░░ 78%
 1 In Progress    2 Blocked
 Last activity: 14 minutes ago
@@ -2137,9 +2137,9 @@ Group by type.
 Example:
 
 Issues
-- AW-42        Jira
+- AC-42        Jira
 Repositories
-- agent-workspace     GitHub
+- agent-continuity     GitHub
 Documents
 - Product Requirements Document
 
@@ -2199,17 +2199,17 @@ Future versions may provide a paste-and-decompose interface.
 
 ⸻
 
-48. General Agent Workspace Skill
+48. General Agent Continuity Skill
 
 File:
 
-skills/agent-workspace/SKILL.md
+skills/agent-continuity/SKILL.md
 
 The Skill should contain the following behaviour.
 
 Purpose
 
-Use Agent Workspace as persistent project state for meaningful multi-step work.
+Use Agent Continuity as persistent project state for meaningful multi-step work.
 
 Project discovery
 
@@ -2359,7 +2359,7 @@ skills/project-bootstrap/SKILL.md
 
 Purpose
 
-Convert a conversation, specification, plan, issue, or body of work into a structured Agent Workspace project.
+Convert a conversation, specification, plan, issue, or body of work into a structured Agent Continuity project.
 
 When to bootstrap
 
@@ -2394,7 +2394,7 @@ Build a local-first persistent execution workspace for AI agents.
 
 Bad:
 
-Work on Agent Workspace.
+Work on Agent Continuity.
 
 Extract project description
 
@@ -2518,15 +2518,15 @@ Default data directory:
 
 Linux/macOS:
 
-~/.agent-workspace
+~/.agent-continuity
 
 Database:
 
-~/.agent-workspace/workspace.db
+~/.agent-continuity/workspace.db
 
 Configuration file:
 
-~/.agent-workspace/config.json
+~/.agent-continuity/config.json
 
 Example:
 
@@ -2544,11 +2544,11 @@ Environment variables override configuration.
 
 Supported:
 
-AGENT_WORKSPACE_HOST
-AGENT_WORKSPACE_PORT
-AGENT_WORKSPACE_DATA_DIR
-AGENT_WORKSPACE_DATABASE_PATH
-AGENT_WORKSPACE_CLAIM_TTL_MINUTES
+AGENT_CONTINUITY_HOST
+AGENT_CONTINUITY_PORT
+AGENT_CONTINUITY_DATA_DIR
+AGENT_CONTINUITY_DATABASE_PATH
+AGENT_CONTINUITY_CLAIM_TTL_MINUTES
 
 The service must bind to:
 
@@ -2564,7 +2564,7 @@ It must not listen publicly by default.
 
 Command:
 
-aw server
+ac server
 
 Starts:
 
@@ -2577,11 +2577,11 @@ http://127.0.0.1:4732
 
 The MCP server should support stdio:
 
-aw mcp
+ac mcp
 
 or:
 
-agent-workspace-mcp
+agent-continuity-mcp
 
 The initial implementation does not require daemonisation.
 
@@ -2690,7 +2690,7 @@ packages/client
 
 Expose a typed client:
 
-const client = createAgentWorkspaceClient({
+const client = createAgentContinuityClient({
   baseUrl: "http://127.0.0.1:4732"
 });
 
@@ -3001,7 +3001,7 @@ Build:
 
 Deliverable:
 
-Codex, Claude Code, and compatible agents can interact with Agent Workspace through structured tools.
+Codex, Claude Code, and compatible agents can interact with Agent Continuity through structured tools.
 
 ⸻
 
@@ -3017,7 +3017,7 @@ Build:
 
 Deliverable:
 
-Humans and terminal-capable agents can use Agent Workspace without MCP.
+Humans and terminal-capable agents can use Agent Continuity without MCP.
 
 ⸻
 
@@ -3045,7 +3045,7 @@ Phase 11 — Skills
 
 Build:
 
-agent-workspace
+agent-continuity
 project-bootstrap
 
 Test manually with at least two different AI coding agents.
@@ -3058,11 +3058,11 @@ Agents consistently use the structured project workflow.
 
 Phase 12 — Dogfooding
 
-Create an Agent Workspace project representing Agent Workspace itself.
+Create an Agent Continuity project representing Agent Continuity itself.
 
 Import the remaining development work into the tool.
 
-From that point onward, use Agent Workspace to manage its own development.
+From that point onward, use Agent Continuity to manage its own development.
 
 Test handover workflows using at least:
 
@@ -3078,7 +3078,7 @@ The specific agents may be substituted, but testing must involve two different a
 As soon as projects.bootstrap is available, create:
 
 Project:
-Agent Workspace
+Agent Continuity
 
 Objective:
 
@@ -3086,7 +3086,7 @@ Build a local-first persistent project execution workspace that allows AI agents
 
 Project context:
 
-Agent Workspace is designed primarily for AI agents.
+Agent Continuity is designed primarily for AI agents.
 The conversation is temporary. The agent is replaceable. Project state persists.
 The core service must remain domain agnostic.
 The structured service and tools are the primary agent interface.
@@ -3144,7 +3144,7 @@ Full event sourcing adds complexity that is not required to validate the product
 
 62. Definition of Done for v0.1
 
-Agent Workspace v0.1 is complete when the following scenario works without editing a progress.md file.
+Agent Continuity v0.1 is complete when the following scenario works without editing a progress.md file.
 
 Scenario
 
@@ -3212,7 +3212,7 @@ If this scenario works reliably across two different agent tools, v0.1 has achie
 
 63. Core Product Statement
 
-Agent Workspace is not a Trello replacement.
+Agent Continuity is not a Trello replacement.
 
 It is not a Jira replacement.
 
@@ -3228,4 +3228,4 @@ Skills teach agents how to behave.
 
 The project state survives them all.
 
-Persistent project execution for AI agents.
+Persistent project execution across agents and sessions.

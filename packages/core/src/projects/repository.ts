@@ -1,5 +1,5 @@
-import type { ProjectStatus, ProjectSummary, TaskCounts } from "@agent-workspace/contracts";
-import { tasks, type ProjectRow } from "@agent-workspace/database";
+import type { ProjectStatus, ProjectSummary, TaskCounts } from "@agent-continuity/contracts";
+import { tasks, type ProjectRow } from "@agent-continuity/database";
 import { eq, sql } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { Runtime } from "../runtime.js";

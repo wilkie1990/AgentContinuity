@@ -1,10 +1,11 @@
 import type {
   AcceptanceCriterion,
+  TaskExecution,
   TaskPriority,
   TaskRef,
   TaskStatus,
   TaskSummary,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 import {
   acceptanceCriteria,
   blockers,
@@ -15,10 +16,11 @@ import {
   type AcceptanceCriterionRow,
   type TaskClaimRow,
   type TaskRow,
-} from "@agent-workspace/database";
+} from "@agent-continuity/database";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { toClaimDto } from "../claims/repository.js";
 import type { ClaimService } from "../claims/service.js";
+import type { ExecutionService } from "../executions/service.js";
 import type { Runtime } from "../runtime.js";
 
 export type CriteriaCount = { total: number; completed: number };
@@ -30,6 +32,7 @@ export type TaskAggregates = {
   activeBlockers: Map<string, number>;
   links: Map<string, number>;
   claims: Map<string, TaskClaimRow>;
+  executions: Map<string, TaskExecution>;
   projectKeys: Map<string, string>;
   taskKeys: Map<string, string>;
 };
@@ -51,6 +54,7 @@ export function buildAggregates(
   claimService: ClaimService,
   rows: TaskRow[],
   options: { includeDependents?: boolean } = {},
+  executions?: ExecutionService,
 ): TaskAggregates {
   const ids = rows.map((row) => row.id);
   const aggregates: TaskAggregates = {
@@ -60,6 +64,7 @@ export function buildAggregates(
     activeBlockers: new Map(),
     links: new Map(),
     claims: new Map(),
+    executions: new Map(),
     projectKeys: new Map(),
     taskKeys: new Map(rows.map((row) => [row.id, row.key])),
   };
@@ -168,6 +173,12 @@ export function buildAggregates(
   }
 
   aggregates.claims = claimService.activeForMany(ids);
+  if (executions) {
+    for (const id of ids) {
+      const execution = executions.activeFor(id);
+      if (execution) aggregates.executions.set(id, execution);
+    }
+  }
   return aggregates;
 }
 
@@ -209,6 +220,7 @@ export function toTaskSummary(
     // A task is actionable only when it is ready, unblocked and free of incomplete dependencies.
     isActionable: row.status === "ready" && dependenciesComplete && activeBlockerCount === 0,
     claim: claim ? toClaimDto(runtime, claim, row.key) : null,
+    execution: aggregates.executions.get(row.id) ?? null,
   };
 }
 

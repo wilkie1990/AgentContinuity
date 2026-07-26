@@ -1,5 +1,5 @@
-import { listExternalIPv4Addresses } from "@agent-workspace/config";
-import { TEST_CONFIG } from "@agent-workspace/core/testing";
+import { listExternalIPv4Addresses } from "@agent-continuity/config";
+import { TEST_CONFIG } from "@agent-continuity/core/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { describeRunningServer, startServer, type RunningServer } from "../start.js";
 
@@ -74,7 +74,7 @@ describe("describeRunningServer", () => {
       isExposedBeyondLoopback: false,
     });
 
-    expect(lines).toEqual(["Agent Workspace listening on http://127.0.0.1:4732"]);
+    expect(lines).toEqual(["Agent Continuity listening on http://127.0.0.1:4732"]);
   });
 
   it("appends the no-authentication warning when reachable beyond loopback", () => {
@@ -83,7 +83,7 @@ describe("describeRunningServer", () => {
       isExposedBeyondLoopback: true,
     });
 
-    expect(lines[0]).toBe("Agent Workspace listening on http://100.100.144.100:4732");
+    expect(lines[0]).toBe("Agent Continuity listening on http://100.100.144.100:4732");
     expect(lines.join("\n")).toMatch(/no authentication/i);
   });
 
@@ -93,7 +93,7 @@ describe("describeRunningServer", () => {
       isExposedBeyondLoopback: true,
     });
 
-    expect(lines[0]).toBe("Agent Workspace listening on http://127.0.0.1:4732");
-    expect(lines[1]).toBe("Agent Workspace listening on http://192.168.0.134:4732");
+    expect(lines[0]).toBe("Agent Continuity listening on http://127.0.0.1:4732");
+    expect(lines[1]).toBe("Agent Continuity listening on http://192.168.0.134:4732");
   });
 });

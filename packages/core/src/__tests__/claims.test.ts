@@ -37,6 +37,30 @@ describe("task claims", () => {
     expect(workspace.tasks.getSummary(task.key).status).toBe("backlog");
   });
 
+  it("keeps heartbeat noise out of activity while extending the claim and execution", () => {
+    const task = seedTask(workspace, projectKey, "Run work", { status: "ready" });
+    workspace.claims.claim(task.key, { actor: "codex", sessionId: "run-1" });
+    const before = eventTypes(workspace, projectKey).length;
+    workspace.advanceMinutes(10);
+    const claim = workspace.claims.heartbeat(task.key, { actor: "codex", sessionId: "run-1", phase: "Testing" });
+    expect(claim.expiresInMinutes).toBe(30);
+    expect(workspace.executions.activeFor(task.id)?.currentPhase).toBe("Testing");
+    expect(eventTypes(workspace, projectKey)).toHaveLength(before);
+  });
+
+  it("writes a durable handoff when a claim is released and exposes it to attention", () => {
+    const task = seedTask(workspace, projectKey, "Handoff", { status: "ready" });
+    workspace.claims.claim(task.key, { actor: "codex", sessionId: "run-1" });
+    workspace.executions.checkpoint(task.key, { completed: "Schema", workingOn: "Routes", next: "Test", actor: "codex" });
+    workspace.advanceMinutes(6);
+    expect(workspace.executions.needsAttention(projectKey)).toContainEqual(
+      expect.objectContaining({ taskKey: task.key, reason: "stale_execution" }),
+    );
+    workspace.claims.release(task.key, { actor: "codex", sessionId: "run-1", reason: "handoff" });
+    expect(workspace.executions.forTask(task.key).handoff?.nextAction).toBe("Test");
+    expect(workspace.executions.needsAttention(projectKey)).toContainEqual(expect.objectContaining({ taskKey: task.key, reason: "handoff" }));
+  });
+
   it("rejects a second active claim from another agent", () => {
     const task = seedTask(workspace, projectKey);
     workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
@@ -130,11 +154,36 @@ describe("task claims", () => {
 
   it("lets another agent claim a task whose lease expired", () => {
     const task = seedTask(workspace, projectKey);
-    workspace.claims.claim(task.key, { actor: "codex" });
+    workspace.claims.claim(task.key, { actor: "codex", sessionId: "first-run" });
+    workspace.executions.checkpoint(task.key, {
+      completed: "Inspection",
+      workingOn: "Implementation",
+      next: "Run verification",
+      actor: "codex",
+      sessionId: "first-run",
+    });
     workspace.advanceMinutes(31);
 
-    const { claim } = workspace.claims.claim(task.key, { actor: "claude-code" });
+    // Reading reconciles the expired lease into an interrupted execution and handoff.
+    expect(workspace.tasks.getSummary(task.key).claim).toBeNull();
+    expect(workspace.executions.forTask(task.key).handoff).toEqual(
+      expect.objectContaining({ reason: "claim expired", nextAction: "Run verification" }),
+    );
+    expect(workspace.executions.needsAttention(projectKey)).toContainEqual(
+      expect.objectContaining({ taskKey: task.key, reason: "expired_claim" }),
+    );
+
+    const { claim } = workspace.claims.claim(task.key, {
+      actor: "claude-code",
+      sessionId: "second-run",
+    });
     expect(claim.actor).toBe("claude-code");
+    expect(workspace.executions.forTask(task.key).execution).toEqual(
+      expect.objectContaining({ actor: "claude-code", health: "active" }),
+    );
+    expect(workspace.executions.needsAttention(projectKey)).not.toContainEqual(
+      expect.objectContaining({ taskKey: task.key }),
+    );
   });
 
   it("extends the lease when the owning agent re-claims", () => {
@@ -177,6 +226,9 @@ describe("task claims", () => {
     const detail = workspace.tasks.get(task.key);
     expect(detail.claim).toBeNull();
     expect(detail.status).toBe("done");
+    expect(workspace.executions.needsAttention(projectKey)).not.toContainEqual(
+      expect.objectContaining({ taskKey: task.key }),
+    );
   });
 
   it("raises TASK_NOT_CLAIMED when renewing or releasing an unclaimed task", () => {

@@ -4,16 +4,16 @@ The MCP server is the primary product interface. It talks to `packages/core` in-
 it needs no running HTTP server — only access to the SQLite database.
 
 ```bash
-node apps/mcp/dist/bin.js     # or: aw mcp
+node apps/mcp/dist/bin.js     # or: ac mcp
 ```
 
 ```json
 {
   "mcpServers": {
-    "agent-workspace": {
+    "agent-continuity": {
       "command": "node",
-      "args": ["/absolute/path/to/AgentWorkspace/apps/mcp/dist/bin.js"],
-      "env": { "AGENT_WORKSPACE_DATA_DIR": "~/.agent-workspace" }
+      "args": ["/absolute/path/to/AgentContinuity/apps/mcp/dist/bin.js"],
+      "env": { "AGENT_CONTINUITY_DATA_DIR": "~/.agent-continuity" }
     }
   }
 }
@@ -23,7 +23,7 @@ stdout is the transport, so all diagnostics go to stderr.
 
 ## Tools
 
-Tool names are snake case. The surface is intentionally compact — 28 tools designed for
+Tool names are snake case. The surface is intentionally compact — 35 tools designed for
 agent use rather than a mirror of every HTTP endpoint.
 
 ### Projects
@@ -36,6 +36,7 @@ agent use rather than a mirror of every HTTP endpoint.
 | `projects_bootstrap` | Convert a conversation, plan or specification into a whole project atomically |
 | `projects_update` | Name, objective, description, status |
 | `projects_update_context` | Replace persistent project memory |
+| `projects_delete` | Permanently removes a project created in error; prefer archiving over deleting |
 
 `projects_get` includes context, so there is no separate `projects_get_context`.
 
@@ -49,6 +50,12 @@ agent use rather than a mirror of every HTTP endpoint.
 | `tasks_update` | Title, description, status, priority, parent |
 | `tasks_update_context` | Replace persistent task memory |
 | `tasks_claim` / `tasks_release_claim` | Temporary leases |
+| `tasks_heartbeat` | Silently refresh the claim and execution; optionally set the current phase |
+| `tasks_execution_get` | Execution health, checkpoints, work plan and latest handoff |
+| `tasks_checkpoint` | Durable completed / working-on / next state at a meaningful boundary |
+| `tasks_work_plan` | Set phases, inspect them, or move a phase through its status |
+| `tasks_add_execution_origin` | Link the run to its provider-neutral source thread or session |
+| `tasks_add_criterion_evidence` | Attach a test, file, result or URL to one criterion |
 | `tasks_add_progress` | Meaningful milestones only |
 | `tasks_add_blocker` / `tasks_resolve_blocker` | Record and clear what stops the work |
 | `tasks_complete` | Enforces acceptance criteria and blockers unless forced with a reason |
@@ -63,6 +70,7 @@ agent use rather than a mirror of every HTTP endpoint.
 | `decisions_create` / `decisions_list` | Explicit choices and their reasoning |
 | `links_add` / `links_list` / `links_remove` | Generic external resources |
 | `activity_list` | What changed, and what previous agents did |
+| `attention_list` | Stale/interrupted runs, expired claims, blockers, review and handoffs |
 
 ## Response design
 
@@ -71,7 +79,7 @@ exposed. `tasks_get` renders the complete working state and ends with a recommen
 
 ```
 TASK-0014 — Design task claim model
-Project: PRJ-0001 — Agent Workspace
+Project: PRJ-0001 — Agent Continuity
 Status: in_progress
 Priority: high
 Actionable: yes
@@ -130,6 +138,10 @@ create the dependency cycle TASK-0008 → TASK-0012 → TASK-0008.
 - Always pass `actor` (your agent name) and `session_id`. They attribute progress and
   decisions, and they are how a claim recognises its owner and renews itself.
 - Claim before meaningful work, not to inspect.
+- Heartbeat silently while working; it is liveness, not a milestone.
+- Keep the work plan current and checkpoint at phase boundaries or before handoff.
+- Before completion, attach available proof to each criterion and mark only proven criteria.
+- On takeover, read `tasks_execution_get`; use `attention_list` to find work needing action.
 - Milestones go in progress; durable knowledge goes in context; choices go in decisions.
 
-The `agent-workspace` and `project-bootstrap` Skills encode this behaviour in full.
+The `agent-continuity` and `project-bootstrap` Skills encode this behaviour in full.

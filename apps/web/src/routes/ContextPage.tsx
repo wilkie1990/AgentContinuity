@@ -1,7 +1,9 @@
 import { useParams } from "react-router-dom";
 import { client, useProject, useWorkspaceMutation } from "../api.js";
+import { MarkdownContextEditor } from "../components/MarkdownContextEditor.js";
 import { ProjectHeader } from "../components/ProjectHeader.js";
-import { ErrorNote, Loading, UI_ACTOR } from "../components/common.js";
+import { ErrorNote, UI_ACTOR } from "../components/common.js";
+import { Skeleton } from "../components/StatePlaceholders.js";
 import { formatDateTime } from "../format.js";
 import { useSyncedDraft } from "../hooks.js";
 
@@ -16,34 +18,36 @@ export function ContextPage() {
     client.projects.updateContext(ref as string, { context: next, actor: UI_ACTOR }),
   );
 
-  if (isLoading) return <Loading />;
+  if (isLoading) return <Skeleton lines={6} />;
   if (error) return <ErrorNote error={error} />;
   if (!project) return null;
 
-  const dirty = value !== (project.context ?? "");
+  const savedContext = project.context ?? "";
 
   return (
     <>
       <ProjectHeader project={project} />
       <div className="page stack">
-        <div className="spread">
-          <h2>Project Context</h2>
-          <button className="primary" disabled={!dirty || save.isPending} onClick={() => save.mutate(value)}>
-            Save context
-          </button>
-        </div>
+        <h2>Project Context</h2>
         <p className="muted small" style={{ margin: 0 }}>
           Persistent working memory relevant to agents working anywhere in this project.
         </p>
         <ErrorNote error={save.error} />
-        <textarea
-          aria-label="Project context"
+        <MarkdownContextEditor
           value={value}
-          onChange={(event) => setValue(event.target.value)}
-          style={{ minHeight: "50vh", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+          savedValue={savedContext}
+          textareaLabel="Project context"
+          emptyMessage="No context recorded yet. Add persistent working memory for agents working on this project."
+          placeholder="Persistent working memory relevant to agents working anywhere in this project: constraints, scope boundaries, core assumptions, architecture, user preferences that affect execution."
+          size="page"
+          isSaving={save.isPending}
+          onChange={setValue}
+          onSave={(next) => save.mutateAsync(next)}
         />
         <p className="small muted">
-          {value.length} characters · Last updated {formatDateTime(project.updatedAt)}
+          {value.length === 0
+            ? "No context recorded yet."
+            : `${value.length} characters · Last updated ${formatDateTime(project.updatedAt)}`}
         </p>
       </div>
     </>

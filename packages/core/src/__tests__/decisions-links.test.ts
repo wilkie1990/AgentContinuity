@@ -114,8 +114,8 @@ describe("links", () => {
     const [link] = workspace.links.add(projectKey, {
       type: "issue",
       provider: "jira",
-      reference: "AW-42",
-      url: "https://example.invalid/browse/AW-42",
+      reference: "AC-42",
+      url: "https://example.invalid/browse/AC-42",
       metadata: { status: "In Progress" },
       actor: "codex",
     });
@@ -151,11 +151,11 @@ describe("links", () => {
   });
 
   it("filters links and removes them", () => {
-    workspace.links.add(projectKey, { type: "issue", provider: "jira", reference: "AW-42" });
+    workspace.links.add(projectKey, { type: "issue", provider: "jira", reference: "AC-42" });
     const [repository] = workspace.links.add(projectKey, {
       type: "repository",
       provider: "github",
-      reference: "agent-workspace",
+      reference: "agent-continuity",
     });
 
     expect(workspace.links.list(projectKey, { type: "issue" })).toHaveLength(1);

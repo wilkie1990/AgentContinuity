@@ -18,3 +18,4 @@ export type { ClaimService } from "./claims/service.js";
 export type { BlockerService } from "./blockers/service.js";
 export type { DecisionService } from "./decisions/service.js";
 export type { LinkService } from "./links/service.js";
+export type { ExecutionService } from "./executions/service.js";

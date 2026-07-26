@@ -1,19 +1,36 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type ArchiveProjectInput,
   type BootstrapProjectRequest,
   type BootstrapResult,
   type CreateProjectInput,
+  type DeletedProject,
+  type DeleteProjectInput,
   type ListProjectsQuery,
   type ProjectDetail,
   type ProjectListPage,
   type ProjectSummary,
   type UpdateProjectContextInput,
   type UpdateProjectInput,
-} from "@agent-workspace/contracts";
-import { projects, tasks, type ProjectRow, type TaskRow } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import {
+  acceptanceCriteria,
+  activityEvents,
+  blockers,
+  decisions,
+  links,
+  projects,
+  taskClaims,
+  taskDependencies,
+  taskProgress,
+  tasks,
+  type ProjectRow,
+  type TaskRow,
+} from "@agent-continuity/database";
 import { and, asc, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
+import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { ActivityService } from "../activity/service.js";
+import type { ClaimService } from "../claims/service.js";
 import type { DecisionService } from "../decisions/service.js";
 import { nextKey } from "../ids.js";
 import type { LinkService } from "../links/service.js";
@@ -31,6 +48,7 @@ export function createProjectService(
   runtime: Runtime,
   activity: ActivityService,
   taskService: TaskService,
+  claims: ClaimService,
   decisionService: DecisionService,
   linkService: LinkService,
 ) {
@@ -234,6 +252,100 @@ export function createProjectService(
     },
 
     /**
+     * Permanently removes a project and everything it owns: every task and everything
+     * each task owns (acceptance criteria, progress, blockers, claims, dependency
+     * edges), plus the project's own decisions, links and activity history. Foreign
+     * keys cascade from `projects`, so the single row delete below does the rest.
+     *
+     * Unlike task deletion, a project has no surviving parent scope, so nothing about
+     * the deletion is recorded in the workspace's own queryable activity — there is
+     * nowhere left to attach that event. See DEC-0008 for the reasoning and the
+     * process-log line written just before the row goes.
+     *
+     * A project may be deleted regardless of status (active, paused, completed or
+     * archived) — archiving first is not required, matching how task deletion imposes
+     * no status precondition either. The only structural guard is claimed work: any
+     * task in the project with an active claim blocks deletion unless `force` is true.
+     */
+    delete(projectRef: string, input: DeleteProjectInput = { force: false }): DeletedProject {
+      return runtime.tx(() => {
+        const project = requireProject(runtime, projectRef);
+
+        const taskIds = runtime.db
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(eq(tasks.projectId, project.id))
+          .all()
+          .map((row) => row.id);
+
+        if (taskIds.length > 0) {
+          const activeClaims = claims.activeForMany(taskIds);
+          if (activeClaims.size > 0 && !input.force) {
+            const claimants = [...new Set([...activeClaims.values()].map((claim) => claim.actor))];
+            throw new AgentContinuityError(
+              "PROJECT_HAS_CLAIMED_TASKS",
+              `${project.key} has ${activeClaims.size} actively claimed ${
+                activeClaims.size === 1 ? "task" : "tasks"
+              } (held by ${claimants.join(", ")}). Deleting it would discard work in progress — ` +
+                "release the claims, or pass force.",
+              { project: project.key, claimedTasks: activeClaims.size, claimants },
+            );
+          }
+        }
+
+        const countWhereIn = (table: SQLiteTable, column: AnySQLiteColumn, ids: string[]): number => {
+          if (ids.length === 0) return 0;
+          return Number(
+            runtime.db
+              .select({ total: sql<number>`count(*)` })
+              .from(table)
+              .where(inArray(column, ids))
+              .get()?.total ?? 0,
+          );
+        };
+
+        const countForProject = (table: SQLiteTable, column: AnySQLiteColumn): number =>
+          Number(
+            runtime.db
+              .select({ total: sql<number>`count(*)` })
+              .from(table)
+              .where(eq(column, project.id))
+              .get()?.total ?? 0,
+          );
+
+        const removed: DeletedProject["removed"] = {
+          tasks: taskIds.length,
+          acceptanceCriteria: countWhereIn(acceptanceCriteria, acceptanceCriteria.taskId, taskIds),
+          progress: countWhereIn(taskProgress, taskProgress.taskId, taskIds),
+          blockers: countWhereIn(blockers, blockers.taskId, taskIds),
+          claims: countWhereIn(taskClaims, taskClaims.taskId, taskIds),
+          dependencies: countWhereIn(taskDependencies, taskDependencies.taskId, taskIds),
+          decisions: countForProject(decisions, decisions.projectId),
+          links: countForProject(links, links.projectId),
+          activityEvents: countForProject(activityEvents, activityEvents.projectId),
+        };
+
+        const summary: DeletedProject = {
+          id: project.id,
+          key: project.key,
+          name: project.name,
+          removed,
+        };
+
+        // No project-scoped home survives for a project.deleted event, so this process
+        // log line is the only trace left once the transaction below commits.
+        console.error(
+          `[agent-continuity] project deleted: ${project.key} "${project.name}" actor=` +
+            `${input.actor ?? "unknown"}${input.sessionId ? ` session=${input.sessionId}` : ""} ` +
+            `removed=${JSON.stringify(removed)}`,
+        );
+
+        runtime.db.delete(projects).where(eq(projects.id, project.id)).run();
+        return summary;
+      });
+    },
+
+    /**
      * Turns a plan into a complete project in a single transaction: project, tasks,
      * acceptance criteria, dependencies, decisions and links all commit together or
      * not at all. Temporary `ref` values only exist inside the request.
@@ -270,7 +382,7 @@ export function createProjectService(
           created.push(row);
           if (task.ref) {
             if (refMap.has(task.ref)) {
-              throw new AgentWorkspaceError(
+              throw new AgentContinuityError(
                 "INVALID_BOOTSTRAP_REFERENCE",
                 `Duplicate task ref "${task.ref}" in bootstrap request.`,
                 { ref: task.ref },
@@ -283,7 +395,7 @@ export function createProjectService(
         const resolveRef = (ref: string, field: string): TaskRow => {
           const row = refMap.get(ref);
           if (!row) {
-            throw new AgentWorkspaceError(
+            throw new AgentContinuityError(
               "INVALID_BOOTSTRAP_REFERENCE",
               `${field} references unknown task ref "${ref}".`,
               { ref, field, knownRefs: [...refMap.keys()] },

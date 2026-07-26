@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom";
-import { client, useProjects, useWorkspaceMutation } from "../api.js";
-import { ErrorNote, Loading, ProgressBar, UI_ACTOR } from "../components/common.js";
-import { formatRelative } from "../format.js";
+import { client, useAttention, useProjects, useWorkspaceMutation } from "../api.js";
+import { ErrorNote, Loading, UI_ACTOR } from "../components/common.js";
+import { ProjectStateSummary } from "../components/ProjectStateSummary.js";
 
 export function ProjectListPage({ onNewProject }: { onNewProject: () => void }) {
   const { data, isLoading, error } = useProjects(["active", "paused", "completed"]);
+  const attention = useAttention();
   const archive = useWorkspaceMutation(undefined, (key: string) =>
     client.projects.archive(key, UI_ACTOR),
   );
@@ -39,15 +40,10 @@ export function ProjectListPage({ onNewProject }: { onNewProject: () => void }) 
                 </div>
                 <span className="key">{project.key}</span>
               </div>
-              <ProgressBar value={project.progress} />
-              <div className="row small muted">
-                <span>{project.taskCounts.inProgress} In Progress</span>
-                <span>{project.taskCounts.blocked} Blocked</span>
-                <span>
-                  {project.taskCounts.done}/{project.taskTotal} Done
-                </span>
-                <span>Last activity: {formatRelative(project.lastActivityAt)}</span>
-              </div>
+              <ProjectStateSummary
+                project={project}
+                attentionCount={(attention.data ?? []).filter((item) => item.projectId === project.id).length}
+              />
             </Link>
             <div className="row" style={{ justifyContent: "flex-end", marginTop: 10 }}>
               <Link to={`/projects/${project.key}`}>

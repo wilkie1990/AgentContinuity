@@ -1,11 +1,29 @@
-import type { TaskPriority, TaskStatus } from "@agent-workspace/contracts";
+import type { TaskPriority, TaskStatus, WorkPlanItem } from "@agent-continuity/contracts";
 import { useEffect, useState, type FormEvent } from "react";
-import { client, useTask, useWorkspaceMutation } from "../api.js";
+import { client, useExecutionState, useTask, useWorkspaceMutation } from "../api.js";
 import { BOARD_COLUMNS, describeEvent, formatDateTime, formatTime } from "../format.js";
 import { useSyncedDraft } from "../hooks.js";
-import { Empty, ErrorNote, Loading, Section, UI_ACTOR } from "./common.js";
+import { Empty, ErrorNote, UI_ACTOR } from "./common.js";
+import { DrawerSection } from "./DrawerSection.js";
+import { ExecutionHealthBadge } from "./ExecutionStatus.js";
+import { MarkdownContextEditor } from "./MarkdownContextEditor.js";
+import { Skeleton } from "./StatePlaceholders.js";
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
+
+function WorkPlan({ items }: { items: WorkPlanItem[] }) {
+  if (items.length === 0) return <Empty>No work plan recorded yet.</Empty>;
+  return (
+    <ol className="work-plan">
+      {items.map((item) => (
+        <li key={item.id} className={`work-plan-item work-plan-${item.status}`}>
+          <span className="work-plan-state">{item.status.replace("_", " ")}</span>
+          <span>{item.title}</span>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function AddForm({
   placeholder,
@@ -68,6 +86,7 @@ function AddForm({
 
 export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () => void }) {
   const { data: task, isLoading, error } = useTask(taskKey);
+  const executionState = useExecutionState(taskKey);
   const projectKey = task?.project.key;
 
   // Seeded from the server but kept from being clobbered by a background
@@ -151,6 +170,10 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
     <div className="drawer-backdrop" onClick={onClose} role="presentation">
       <div
         className="drawer"
+        // Keyed by task so every collapsible section below resets to its
+        // deliberate default (see DrawerSection) instead of carrying over
+        // whatever the previous task's accordion state happened to be.
+        key={taskKey}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -163,7 +186,7 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
           </button>
         </div>
 
-        {isLoading && <Loading />}
+        {isLoading && <Skeleton lines={5} />}
         <ErrorNote error={error} />
 
         {task && (
@@ -229,45 +252,103 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
 
             <ErrorNote error={busyError} />
 
-            <Section
-              title="Description"
-              action={
-                description !== (task.description ?? "") ? (
+            <DrawerSection
+              title="Now"
+              defaultOpen
+              badge={
+                task.execution ? <ExecutionHealthBadge execution={task.execution} /> : undefined
+              }
+            >
+              {task.execution ? (
+                <div className="now-execution">
+                  <div>
+                    <span className="small muted">Working</span>
+                    <strong>{task.execution.currentPhase ?? "No phase reported"}</strong>
+                  </div>
+                  <div className="small">
+                    <strong>{task.execution.actor}</strong>
+                    {task.execution.sessionId && ` · ${task.execution.sessionId}`}
+                  </div>
+                </div>
+              ) : (
+                <p className="small muted" style={{ margin: 0 }}>
+                  No live execution. A released execution leaves a handoff below so another agent can resume it.
+                </p>
+              )}
+              {executionState.data?.checkpoints[0] ? (
+                <div className="now-checkpoint">
+                  <div><span>Completed</span><p>{executionState.data.checkpoints[0].completed}</p></div>
+                  <div><span>Working on</span><p>{executionState.data.checkpoints[0].workingOn}</p></div>
+                  <div><span>Next</span><p>{executionState.data.checkpoints[0].next}</p></div>
+                  {executionState.data.checkpoints[0].uncertainty && (
+                    <div className="uncertainty"><span>Uncertainty</span><p>{executionState.data.checkpoints[0].uncertainty}</p></div>
+                  )}
+                </div>
+              ) : (
+                <Empty>No structured checkpoint has been recorded.</Empty>
+              )}
+              <div>
+                <h4>Work plan</h4>
+                <WorkPlan items={executionState.data?.workPlan ?? []} />
+              </div>
+              <div className="handoff-placeholder">
+                <h4>Handoff</h4>
+                {executionState.data?.handoff ? (
+                  <div className="handoff-content">
+                    <p>{executionState.data.handoff.summary}</p>
+                    {executionState.data.handoff.nextAction && <p><strong>Next action:</strong> {executionState.data.handoff.nextAction}</p>}
+                    {executionState.data.handoff.unresolved.length > 0 && <p className="small muted">Unresolved: {executionState.data.handoff.unresolved.join("; ")}</p>}
+                  </div>
+                ) : (
+                  <p className="small muted">No handoff has been recorded.</p>
+                )}
+              </div>
+            </DrawerSection>
+
+            <DrawerSection title="Description" defaultOpen>
+              {description !== (task.description ?? "") && (
+                <div className="row" style={{ justifyContent: "flex-end" }}>
                   <button className="subtle" onClick={() => update.mutate({ description })}>
                     Save
                   </button>
-                ) : undefined
-              }
-            >
+                </div>
+              )}
               <textarea
                 aria-label="Description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 placeholder="What must be achieved?"
               />
-            </Section>
+            </DrawerSection>
 
-            <Section
-              title="Persistent task context"
-              action={
-                context !== (task.context ?? "") ? (
-                  <button className="subtle" onClick={() => saveContext.mutate(context)}>
-                    Save
-                  </button>
-                ) : undefined
-              }
-            >
+            <DrawerSection title="Persistent task context" defaultOpen>
               <p className="small muted" style={{ margin: 0 }}>
                 Information future agents need specifically to work on this task.
               </p>
-              <textarea
-                aria-label="Task context"
+              <MarkdownContextEditor
                 value={context}
-                onChange={(event) => setContext(event.target.value)}
+                savedValue={task.context ?? ""}
+                textareaLabel="Task context"
+                emptyMessage="No task context recorded yet. Add the durable information future agents need for this task."
+                placeholder="Information future agents need specifically to work on this task: prior reasoning, rejected approaches, task-specific constraints."
+                isSaving={saveContext.isPending}
+                onChange={setContext}
+                onSave={(next) => saveContext.mutateAsync(next)}
               />
-            </Section>
+            </DrawerSection>
 
-            <Section title="Acceptance criteria">
+            <DrawerSection
+              title="Acceptance criteria"
+              defaultOpen
+              badge={
+                task.acceptanceCriteria.length > 0 ? (
+                  <span className="small muted">
+                    {task.acceptanceCriteria.filter((criterion) => criterion.isComplete).length}/
+                    {task.acceptanceCriteria.length}
+                  </span>
+                ) : undefined
+              }
+            >
               {task.acceptanceCriteria.length === 0 && <Empty>No acceptance criteria yet.</Empty>}
               {task.acceptanceCriteria.map((criterion) => (
                 <label
@@ -289,9 +370,16 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                 placeholder="An objectively checkable outcome"
                 onSubmit={(value) => addCriteria.mutate(value)}
               />
-            </Section>
+            </DrawerSection>
 
-            <Section title="Dependencies">
+            <DrawerSection
+              title="Dependencies"
+              badge={
+                task.dependencies.length > 0 ? (
+                  <span className="small muted">{task.dependencies.length}</span>
+                ) : undefined
+              }
+            >
               {task.dependencies.length === 0 && <Empty>No dependencies.</Empty>}
               {task.dependencies.map((dependency) => (
                 <div key={dependency.id} className="list-item small">
@@ -309,9 +397,12 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   Dependents: {task.dependents.map((dependent) => dependent.key).join(", ")}
                 </p>
               )}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Claim">
+            <DrawerSection
+              title="Claim"
+              badge={task.claim ? <span className="badge claim">claimed</span> : undefined}
+            >
               {task.claim ? (
                 <div className="stack" style={{ gap: 6 }}>
                   <div className="small">
@@ -329,9 +420,17 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
               ) : (
                 <Empty>No active claim. An agent will claim this task before working on it.</Empty>
               )}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Progress">
+            <DrawerSection
+              title="Progress"
+              defaultOpen
+              badge={
+                task.progress.length > 0 ? (
+                  <span className="small muted">{task.progress.length}</span>
+                ) : undefined
+              }
+            >
               <AddForm
                 label="Add progress"
                 placeholder="A meaningful milestone"
@@ -347,9 +446,17 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   <div>{entry.content}</div>
                 </div>
               ))}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Blockers">
+            <DrawerSection
+              title="Blockers"
+              defaultOpen
+              badge={
+                task.activeBlockers.length > 0 ? (
+                  <span className="badge blocker">{task.activeBlockers.length} active</span>
+                ) : undefined
+              }
+            >
               {task.activeBlockers.map((blocker) => (
                 <div key={blocker.id} className="list-item active">
                   <div className="spread">
@@ -383,9 +490,16 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   {blocker.resolution}
                 </div>
               ))}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Decisions">
+            <DrawerSection
+              title="Decisions"
+              badge={
+                task.decisions.length > 0 ? (
+                  <span className="small muted">{task.decisions.length}</span>
+                ) : undefined
+              }
+            >
               {task.decisions.length === 0 && <Empty>No decisions recorded for this task.</Empty>}
               {task.decisions.map((decision) => (
                 <div key={decision.id} className="list-item">
@@ -403,9 +517,16 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   )}
                 </div>
               ))}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Links">
+            <DrawerSection
+              title="Links"
+              badge={
+                task.links.length > 0 ? (
+                  <span className="small muted">{task.links.length}</span>
+                ) : undefined
+              }
+            >
               {task.links.length === 0 && <Empty>No links.</Empty>}
               {task.links.map((link) => (
                 <div key={link.id} className="list-item small">
@@ -420,9 +541,10 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   {link.provider && <span className="muted"> · {link.provider}</span>}
                 </div>
               ))}
-            </Section>
+            </DrawerSection>
 
-            <Section title="Activity">
+            <DrawerSection title="Activity">
+              {task.recentActivity.length === 0 && <Empty>No activity yet.</Empty>}
               <div className="timeline">
                 {task.recentActivity.map((event) => (
                   <div className="entry" key={event.id}>
@@ -433,7 +555,7 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                   </div>
                 ))}
               </div>
-            </Section>
+            </DrawerSection>
           </>
         )}
       </div>

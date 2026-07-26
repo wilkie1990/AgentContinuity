@@ -1,15 +1,60 @@
-/* Owned by the board task (TASK-0006). Moved as-is from the old
-   styles.css during the stylesheet split; not yet responsive. */
+/* Owned by the board task (TASK-0006). See DEC-0009: below 1024px the board
+   shows one status column at a time, selected by .board-tabs, with a
+   per-card "move to" select as the non-drag way to change status. At
+   1024px and up it reverts to the full six-column drag grid. */
 
-/* All six columns fit a typical laptop window; wider content scrolls horizontally. */
-.board {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(186px, 1fr);
-  gap: 10px;
-  align-items: start;
-  padding: 0 16px 32px;
+/* ---------------------------------------------------------- status tabs */
+/* Only meaningful below 1024px (Board.tsx only fills .board with the
+   active column's tasks there); hidden once the full grid takes over. */
+
+.board-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.board-tab {
+  flex: 0 0 auto;
+  background: var(--surface-2);
+}
+
+.board-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (min-width: 1024px) {
+  .board-tabs {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------- columns */
+/* Base (mobile/tablet, <1024px): Board.tsx renders only the active status's
+   column, so a simple full-width block is enough -- no horizontal scroll. */
+.board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-7);
+}
+
+/* Desktop (>=1024px): all six columns side by side; wider content scrolls
+   horizontally within the board rather than the page. */
+@media (min-width: 1024px) {
+  .board {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(186px, 1fr);
+    gap: 10px;
+    align-items: start;
+    overflow-x: auto;
+  }
 }
 
 .column {
@@ -45,3 +90,70 @@
 .task-card.dragging { opacity: 0.45; }
 .task-card .title { font-weight: 500; }
 .task-card.stalled { border-left: 3px solid var(--warning); }
+
+/* Execution detail is deliberately a compact second layer: a card answers
+   who, state, phase, current checkpoint and freshness without becoming a log. */
+.execution-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.execution-actor { font-weight: 600; color: var(--text); }
+.execution-phase, .checkpoint-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.execution-phase::before { content: "· "; color: var(--muted); }
+
+.execution-checkpoint {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px;
+  align-items: baseline;
+}
+
+.checkpoint-label { color: var(--muted); font-weight: 600; }
+
+.execution-health { flex: none; }
+.execution-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.execution-active { background: var(--success-soft); color: var(--success); }
+.badge.execution-idle { background: var(--warning-soft); color: var(--warning); }
+.badge.execution-stale, .badge.execution-disconnected { background: var(--danger-soft); color: var(--danger); }
+.badge.execution-finished { background: var(--surface-2); color: var(--muted); }
+
+/* Card content earns its place per DEC-0009: dependency/link counts are the
+   least essential signal and are dropped below 640px so the priority,
+   actionable/stalled and claim badges -- the ones the board's status logic
+   actually depends on -- stay legible instead of wrapping into clutter. */
+.task-card .dep-count,
+.task-card .link-count {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .task-card .dep-count,
+  .task-card .link-count {
+    display: inline-flex;
+  }
+}
+
+/* Non-drag status change (DEC-0009): a plain select is the primary way to
+   move a card below 1024px, where dragging is unreliable on touch and, with
+   only one column visible, there is nowhere else to drop it anyway. Hidden
+   at desktop, where drag-and-drop remains the primary interaction. */
+.move-select {
+  margin-top: 2px;
+}
+
+@media (min-width: 1024px) {
+  .move-select {
+    display: none;
+  }
+}

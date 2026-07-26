@@ -30,6 +30,13 @@ export type UpdateProjectContextInput = z.infer<typeof updateProjectContextSchem
 export const archiveProjectSchema = z.strictObject({ ...actorFields });
 export type ArchiveProjectInput = z.infer<typeof archiveProjectSchema>;
 
+export const deleteProjectSchema = z.strictObject({
+  /** Required to delete a project that owns a task another agent currently holds a claim on. */
+  force: z.boolean().default(false),
+  ...actorFields,
+});
+export type DeleteProjectInput = z.infer<typeof deleteProjectSchema>;
+
 export const listProjectsQuerySchema = z.object({
   status: arrayable(projectStatusSchema).optional(),
   search: z.string().max(200).optional(),

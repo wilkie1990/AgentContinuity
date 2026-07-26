@@ -1,5 +1,5 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type AcceptanceCriterion,
   type AddProgressInput,
   type CompleteTaskInput,
@@ -14,7 +14,7 @@ import {
   type UpdateAcceptanceCriteriaInput,
   type UpdateTaskContextInput,
   type UpdateTaskInput,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 import {
   acceptanceCriteria,
   activityEvents,
@@ -26,12 +26,13 @@ import {
   type ProjectRow,
   type TaskProgressRow,
   type TaskRow,
-} from "@agent-workspace/database";
+} from "@agent-continuity/database";
 import { and, asc, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-orm";
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { ActivityService } from "../activity/service.js";
 import { listBlockerRows, toBlockerDto } from "../blockers/repository.js";
 import type { ClaimService } from "../claims/service.js";
+import type { ExecutionService } from "../executions/service.js";
 import { queryDecisions } from "../decisions/repository.js";
 import { nextKey } from "../ids.js";
 import { queryLinks } from "../links/repository.js";
@@ -86,13 +87,14 @@ export function createTaskService(
   runtime: Runtime,
   activity: ActivityService,
   claims: ClaimService,
+  executions?: ExecutionService,
 ) {
   function summarise(row: TaskRow): TaskSummary {
-    return toTaskSummary(runtime, row, buildAggregates(runtime, claims, [row]));
+    return toTaskSummary(runtime, row, buildAggregates(runtime, claims, [row], {}, executions));
   }
 
   function summariseAll(rows: TaskRow[]): TaskSummary[] {
-    const aggregates = buildAggregates(runtime, claims, rows);
+    const aggregates = buildAggregates(runtime, claims, rows, {}, executions);
     return rows.map((row) => toTaskSummary(runtime, row, aggregates));
   }
 
@@ -108,7 +110,7 @@ export function createTaskService(
   /** Rejects a parent that is the task itself or one of its own descendants. */
   function assertParentAllowed(task: TaskRow | null, parent: TaskRow, project: ProjectRow): void {
     if (parent.projectId !== project.id) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "VALIDATION_ERROR",
         `Parent task ${parent.key} belongs to a different project.`,
         { parentTask: parent.key },
@@ -116,7 +118,7 @@ export function createTaskService(
     }
     if (!task) return;
     if (parent.id === task.id) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "VALIDATION_ERROR",
         `${task.key} cannot be its own parent.`,
         { task: task.key },
@@ -129,7 +131,7 @@ export function createTaskService(
       if (seen.has(cursor.id)) break;
       seen.add(cursor.id);
       if (cursor.parentTaskId === task.id) {
-        throw new AgentWorkspaceError(
+        throw new AgentContinuityError(
           "VALIDATION_ERROR",
           `Setting ${parent.key} as the parent of ${task.key} would create a task hierarchy cycle.`,
           { task: task.key, parentTask: parent.key },
@@ -209,7 +211,7 @@ export function createTaskService(
       const incomplete = criteria.filter((criterion) => criterion.isComplete === 0);
 
       if (incomplete.length > 0 && !input.force) {
-        throw new AgentWorkspaceError(
+        throw new AgentContinuityError(
           "TASK_HAS_INCOMPLETE_ACCEPTANCE_CRITERIA",
           `${task.key} has ${incomplete.length} incomplete acceptance ${
             incomplete.length === 1 ? "criterion" : "criteria"
@@ -225,7 +227,7 @@ export function createTaskService(
         (blocker) => blocker.resolvedAt === null,
       );
       if (activeBlockers.length > 0 && !input.force) {
-        throw new AgentWorkspaceError(
+        throw new AgentContinuityError(
           "TASK_HAS_ACTIVE_BLOCKERS",
           `${task.key} has ${activeBlockers.length} active ${
             activeBlockers.length === 1 ? "blocker" : "blockers"
@@ -373,7 +375,7 @@ export function createTaskService(
     get(taskRef: string): TaskDetail {
       return runtime.tx(() => {
         const row = requireTask(runtime, taskRef);
-        const aggregates = buildAggregates(runtime, claims, [row], { includeDependents: true });
+        const aggregates = buildAggregates(runtime, claims, [row], { includeDependents: true }, executions);
         return detail(row, aggregates);
       });
     },
@@ -406,7 +408,7 @@ export function createTaskService(
               (blocker) => blocker.resolvedAt === null,
             );
             if (active.length > 0) {
-              throw new AgentWorkspaceError(
+              throw new AgentContinuityError(
                 "TASK_HAS_ACTIVE_BLOCKERS",
                 `${task.key} cannot leave the blocked status while ${active.length} active ${
                   active.length === 1 ? "blocker remains" : "blockers remain"
@@ -553,7 +555,7 @@ export function createTaskService(
 
         const claim = claims.activeFor(task.id);
         if (claim && !input.force) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "TASK_ALREADY_CLAIMED",
             `${task.key} is currently claimed by ${claim.actor}. Deleting it would discard work in progress — release the claim, or pass force.`,
             { task: task.key, actor: claim.actor, expiresAt: claim.expiresAt },

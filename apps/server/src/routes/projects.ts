@@ -5,6 +5,7 @@ import {
   createDecisionSchema,
   createProjectSchema,
   createTaskSchema,
+  deleteProjectSchema,
   listActivityQuerySchema,
   listDecisionsQuerySchema,
   listLinksQuerySchema,
@@ -12,8 +13,8 @@ import {
   listTasksQuerySchema,
   updateProjectContextSchema,
   updateProjectSchema,
-} from "@agent-workspace/contracts";
-import type { Workspace } from "@agent-workspace/core";
+} from "@agent-continuity/contracts";
+import type { Workspace } from "@agent-continuity/core";
 import type { FastifyPluginCallback } from "fastify";
 import { parse } from "../validation.js";
 
@@ -53,6 +54,11 @@ export function projectRoutes(workspace: Workspace): FastifyPluginCallback {
     app.post<{ Params: Params }>("/projects/:project/archive", (request) => {
       const input = parse(archiveProjectSchema, request.body);
       return { project: workspace.projects.archive(request.params.project, input) };
+    });
+
+    app.delete<{ Params: Params }>("/projects/:project", (request) => {
+      const input = parse(deleteProjectSchema, request.body);
+      return { deleted: workspace.projects.delete(request.params.project, input) };
     });
 
     app.post<{ Params: Params }>("/projects/:project/tasks", (request, reply) => {

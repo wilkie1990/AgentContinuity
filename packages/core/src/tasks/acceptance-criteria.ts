@@ -1,5 +1,5 @@
-import { AgentWorkspaceError, type AcceptanceCriterion } from "@agent-workspace/contracts";
-import { acceptanceCriteria, type TaskRow } from "@agent-workspace/database";
+import { AgentContinuityError, type AcceptanceCriterion } from "@agent-continuity/contracts";
+import { acceptanceCriteria, type TaskRow } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { ClaimService } from "../claims/service.js";
@@ -87,7 +87,7 @@ export function completeCriterion(
   return runtime.tx(() => {
     const criterion = requireCriterion(runtime, task.id, ref);
     if (criterion.isComplete === 1) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "ACCEPTANCE_CRITERION_ALREADY_COMPLETE",
         `The acceptance criterion "${criterion.description}" is already complete.`,
         { criterionId: criterion.id },
@@ -126,7 +126,7 @@ export function reopenCriterion(
   return runtime.tx(() => {
     const criterion = requireCriterion(runtime, task.id, ref);
     if (criterion.isComplete === 0) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "ACCEPTANCE_CRITERION_ALREADY_OPEN",
         `The acceptance criterion "${criterion.description}" is already open.`,
         { criterionId: criterion.id },
@@ -162,7 +162,7 @@ export function deleteCriterion(
   runtime.tx(() => {
     const criterion = requireCriterion(runtime, task.id, ref);
     if (criterion.isComplete === 1) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "ACCEPTANCE_CRITERION_ALREADY_COMPLETE",
         "Only incomplete acceptance criteria may be deleted in v0.1. Reopen it first.",
         { criterionId: criterion.id },

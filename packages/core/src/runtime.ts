@@ -1,4 +1,4 @@
-import type { DatabaseHandle, WorkspaceDatabase } from "@agent-workspace/database";
+import type { DatabaseHandle, WorkspaceDatabase } from "@agent-continuity/database";
 import { randomUUID } from "node:crypto";
 
 export type Clock = () => Date;

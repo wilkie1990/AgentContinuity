@@ -1,4 +1,4 @@
-import { createTestWorkspace, type TestWorkspace } from "@agent-workspace/core/testing";
+import { createTestWorkspace, type TestWorkspace } from "@agent-continuity/core/testing";
 import type { FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { API_PREFIX, buildServer } from "../app.js";
@@ -41,9 +41,29 @@ describe("REST API", () => {
     expect(JSON.parse(response.body)).toEqual({ status: "ok", version: "0.1.0" });
   });
 
+  it("persists execution liveness, checkpoints, plans, evidence and origins", async () => {
+    await call("POST", "/projects", { name: "Continuity", actor: "codex" });
+    const task = await call("POST", "/projects/PRJ-0001/tasks", { title: "Run work", status: "ready", actor: "codex" });
+    const taskKey = task.body.task.key as string;
+    expect((await call("POST", `/tasks/${taskKey}/claim`, { actor: "codex", sessionId: "run-1" })).status).toBe(201);
+    const heartbeat = await call("POST", `/tasks/${taskKey}/heartbeat`, { actor: "codex", sessionId: "run-1", phase: "Implementing" });
+    expect(heartbeat.body.execution.health).toBe("active");
+    const checkpoint = await call("POST", `/tasks/${taskKey}/checkpoints`, { completed: "Schema", workingOn: "Routes", next: "Tests", actor: "codex" });
+    expect(checkpoint.status).toBe(201);
+    const plan = await call("PUT", `/tasks/${taskKey}/work-plan`, { items: ["Schema", "Routes"], actor: "codex" });
+    expect(plan.body.workPlan).toHaveLength(2);
+    const criteria = await call("POST", `/tasks/${taskKey}/acceptance-criteria`, { criteria: ["Covered"], actor: "codex" });
+    const criterionId = criteria.body.acceptanceCriteria[0].id as string;
+    expect((await call("POST", `/tasks/${taskKey}/acceptance-criteria/${criterionId}/evidence`, { type: "test", reference: "api.test.ts", actor: "codex" })).status).toBe(201);
+    expect((await call("POST", `/tasks/${taskKey}/execution/origins`, { provider: "codex", reference: "thread-1", url: "https://example.test/thread-1" })).status).toBe(201);
+    const executionState = (await call("GET", `/tasks/${taskKey}/execution`)).body;
+    expect(Object.keys(executionState).sort()).toEqual(["checkpoints", "execution", "handoff", "workPlan"]);
+    expect(executionState.execution.origins[0].provider).toBe("codex");
+  });
+
   it("creates, reads, updates and archives a project", async () => {
     const created = await call("POST", "/projects", {
-      name: "Agent Workspace",
+      name: "Agent Continuity",
       objective: "Build a persistent execution layer for AI agents",
       actor: "codex",
     });
@@ -62,8 +82,8 @@ describe("REST API", () => {
     });
     expect(fetched.body.project.progress).toBeNull();
 
-    const updated = await call("PATCH", "/projects/PRJ-0001", { name: "Agent Workspace v0.1" });
-    expect(updated.body.project.name).toBe("Agent Workspace v0.1");
+    const updated = await call("PATCH", "/projects/PRJ-0001", { name: "Agent Continuity v0.1" });
+    expect(updated.body.project.name).toBe("Agent Continuity v0.1");
 
     const context = await call("PUT", "/projects/PRJ-0001/context", {
       context: "Project state persists.",
@@ -80,8 +100,8 @@ describe("REST API", () => {
 
   it("bootstraps a project atomically", async () => {
     const response = await call("POST", "/projects/bootstrap", {
-      name: "Agent Workspace",
-      objective: "Persistent project execution for AI agents",
+      name: "Agent Continuity",
+      objective: "Persistent project execution across agents and sessions",
       context: "The conversation is temporary.",
       tasks: [
         { ref: "task-model", title: "Design task model", status: "ready" },
@@ -90,7 +110,7 @@ describe("REST API", () => {
       decisions: [
         { title: "Claims are leases", decision: "Tasks use temporary claims.", taskRef: "claim-model" },
       ],
-      links: [{ type: "repository", provider: "github", reference: "agent-workspace" }],
+      links: [{ type: "repository", provider: "github", reference: "agent-continuity" }],
       actor: "codex",
     });
 
@@ -129,7 +149,7 @@ describe("REST API", () => {
   });
 
   it("rejects a misspelled field on task creation instead of ignoring it", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     const response = await call("POST", "/projects/PRJ-0001/tasks", {
       title: "Task",
       acceptance_criteria: ["would have been silently dropped"],
@@ -140,7 +160,7 @@ describe("REST API", () => {
   });
 
   it("deletes a task and reports what went with it", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", {
       title: "Created in error",
       acceptanceCriteria: ["One"],
@@ -162,7 +182,7 @@ describe("REST API", () => {
   });
 
   it("refuses to delete a claimed task without force", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Claimed" });
     await call("POST", "/tasks/TASK-0001/claim", { actor: "codex" });
 
@@ -174,8 +194,44 @@ describe("REST API", () => {
     expect(forced.status).toBe(200);
   });
 
+  it("deletes a project and reports everything that went with it", async () => {
+    await call("POST", "/projects", { name: "Verify mobile" });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Scratch",
+      acceptanceCriteria: ["One"],
+    });
+    await call("POST", "/tasks/TASK-0001/progress", { content: "Some work", actor: "adam" });
+
+    const deleted = await call("DELETE", "/projects/PRJ-0001", { actor: "adam" });
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.deleted.key).toBe("PRJ-0001");
+    expect(deleted.body.deleted.removed.tasks).toBe(1);
+    expect(deleted.body.deleted.removed.acceptanceCriteria).toBe(1);
+    expect(deleted.body.deleted.removed.progress).toBe(1);
+
+    expect((await call("GET", "/projects/PRJ-0001")).status).toBe(404);
+    expect((await call("GET", "/tasks/TASK-0001")).status).toBe(404);
+
+    // The next project still allocates the next sequential key: it is never reused.
+    const next = await call("POST", "/projects", { name: "Second" });
+    expect(next.body.project.key).toBe("PRJ-0002");
+  });
+
+  it("refuses to delete a project with a claimed task without force", async () => {
+    await call("POST", "/projects", { name: "Agent Continuity" });
+    await call("POST", "/projects/PRJ-0001/tasks", { title: "Claimed" });
+    await call("POST", "/tasks/TASK-0001/claim", { actor: "codex" });
+
+    const refused = await call("DELETE", "/projects/PRJ-0001", { actor: "adam" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe("PROJECT_HAS_CLAIMED_TASKS");
+
+    const forced = await call("DELETE", "/projects/PRJ-0001", { actor: "adam", force: true });
+    expect(forced.status).toBe(200);
+  });
+
   it("runs the full task lifecycle over HTTP", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
 
     const created = await call("POST", "/projects/PRJ-0001/tasks", {
       title: "Design task claim model",
@@ -236,7 +292,7 @@ describe("REST API", () => {
       task: taskKey,
       type: "issue",
       provider: "jira",
-      reference: "AW-42",
+      reference: "AC-42",
       metadata: { status: "In Progress" },
       actor: "codex",
     });
@@ -270,7 +326,7 @@ describe("REST API", () => {
   });
 
   it("manages dependencies over HTTP", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "A" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "B" });
 
@@ -288,7 +344,7 @@ describe("REST API", () => {
   });
 
   it("filters project tasks by repeated status parameters", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Ready", status: "ready" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Backlog" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Review", status: "review" });
@@ -304,7 +360,7 @@ describe("REST API", () => {
   });
 
   it("returns paginated activity in reverse chronological order", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace", actor: "codex" });
+    await call("POST", "/projects", { name: "Agent Continuity", actor: "codex" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "A", actor: "codex" });
     await call("POST", "/tasks/TASK-0001/progress", { content: "Step one", actor: "codex" });
     await call("POST", "/tasks/TASK-0001/progress", { content: "Step two", actor: "codex" });
@@ -359,7 +415,7 @@ describe("REST API", () => {
   });
 
   it("rejects a duplicate claim with a conflict", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Claimed task" });
     await call("POST", "/tasks/TASK-0001/claim", { actor: "codex" });
 
@@ -370,7 +426,7 @@ describe("REST API", () => {
   });
 
   it("releases a claim and deletes acceptance criteria and links", async () => {
-    await call("POST", "/projects", { name: "Agent Workspace" });
+    await call("POST", "/projects", { name: "Agent Continuity" });
     await call("POST", "/projects/PRJ-0001/tasks", { title: "Task" });
     await call("POST", "/tasks/TASK-0001/claim", { actor: "codex" });
 

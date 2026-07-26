@@ -1,5 +1,5 @@
-import { resolveBlockerSchema, updateAcceptanceCriteriaSchema } from "@agent-workspace/contracts";
-import type { Workspace } from "@agent-workspace/core";
+import { resolveBlockerSchema, updateAcceptanceCriteriaSchema } from "@agent-continuity/contracts";
+import type { Workspace } from "@agent-continuity/core";
 import type { FastifyPluginCallback } from "fastify";
 import { parse } from "../validation.js";
 

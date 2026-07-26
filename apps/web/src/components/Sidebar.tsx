@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useProjects } from "../api.js";
+import { useAttention, useProjects } from "../api.js";
+import { ProjectStateSummary } from "./ProjectStateSummary.js";
 
 // Mirrors the desktop breakpoint documented in styles/base.css (1024px).
 // Keeping it in one place here means resizing across the breakpoint is
@@ -47,6 +48,7 @@ export function Sidebar({
   const activeKey = location.pathname.split("/")[2];
   // Archived projects are hidden by default.
   const { data } = useProjects(["active", "paused", "completed"]);
+  const attention = useAttention();
 
   const projects = (data?.projects ?? []).filter((project) =>
     `${project.key} ${project.name} ${project.objective ?? ""}`
@@ -95,6 +97,10 @@ export function Sidebar({
           placeholder="Search projects"
           aria-label="Search projects"
         />
+        <NavLink to="/attention" className={({ isActive }) => (isActive ? "active" : undefined)}>
+          Needs Attention
+          {(attention.data?.length ?? 0) > 0 && <span className="badge blocker">{attention.data?.length}</span>}
+        </NavLink>
         {/* Closing here (rather than only reacting to pathname changes below)
             also covers re-clicking the already-active project link, which
             does not change the path but is still a dismissal on mobile. */}
@@ -106,7 +112,11 @@ export function Sidebar({
               className={project.key === activeKey ? "active" : undefined}
               title={project.objective ?? project.name}
             >
-              {project.name}
+              <span className="project-name">{project.name}</span>
+              <ProjectStateSummary
+                project={project}
+                attentionCount={(attention.data ?? []).filter((item) => item.projectId === project.id).length}
+              />
             </NavLink>
           ))}
           {projects.length === 0 && <p className="empty small">No projects yet.</p>}

@@ -1,5 +1,5 @@
-import type { ActivityEvent, ActivityEventType } from "@agent-workspace/contracts";
-import { activityEvents, projects, tasks } from "@agent-workspace/database";
+import type { ActivityEvent, ActivityEventType } from "@agent-continuity/contracts";
+import { activityEvents, projects, tasks } from "@agent-continuity/database";
 import { and, desc, eq, gt, inArray, lt, type SQL } from "drizzle-orm";
 import type { Runtime } from "../runtime.js";
 

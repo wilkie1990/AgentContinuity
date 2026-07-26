@@ -1,5 +1,5 @@
-import { AgentWorkspaceError } from "@agent-workspace/contracts";
-import { taskDependencies, tasks, type TaskRow } from "@agent-workspace/database";
+import { AgentContinuityError } from "@agent-continuity/contracts";
+import { taskDependencies, tasks, type TaskRow } from "@agent-continuity/database";
 import { and, eq, inArray } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { Runtime } from "../runtime.js";
@@ -70,7 +70,7 @@ function keysFor(runtime: Runtime, ids: string[]): Map<string, string> {
 
 export function assertDependencyAllowed(runtime: Runtime, task: TaskRow, dependsOn: TaskRow): void {
   if (task.id === dependsOn.id) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "DEPENDENCY_SELF_REFERENCE",
       `${task.key} cannot depend on itself.`,
       { task: task.key },
@@ -78,7 +78,7 @@ export function assertDependencyAllowed(runtime: Runtime, task: TaskRow, depends
   }
 
   if (task.projectId !== dependsOn.projectId) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "DEPENDENCY_CROSS_PROJECT",
       `${task.key} and ${dependsOn.key} belong to different projects. Dependencies are limited to tasks in the same project.`,
       { task: task.key, dependsOn: dependsOn.key },
@@ -89,7 +89,7 @@ export function assertDependencyAllowed(runtime: Runtime, task: TaskRow, depends
   if (path) {
     const keys = keysFor(runtime, path);
     const rendered = [task.key, ...path.map((id) => keys.get(id) ?? id)].join(" → ");
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "DEPENDENCY_CYCLE",
       `Cannot add ${dependsOn.key} as a dependency of ${task.key} because it would create the dependency cycle ${rendered}.`,
       { task: task.key, dependsOn: dependsOn.key, cycle: rendered },
@@ -152,7 +152,7 @@ export function removeDependency(
     .all();
 
   if (removed.length === 0) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "DEPENDENCY_NOT_FOUND",
       `${task.key} does not depend on ${dependsOn.key}.`,
       { task: task.key, dependsOn: dependsOn.key },

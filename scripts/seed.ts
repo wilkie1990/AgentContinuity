@@ -1,17 +1,17 @@
 /**
- * Creates the initial "Agent Workspace" project described in the build specification,
- * so that Agent Workspace can be used to manage its own remaining development.
+ * Creates the initial "Agent Continuity" project described in the build specification,
+ * so that Agent Continuity can be used to manage its own remaining development.
  *
  *   pnpm seed
  *
  * Safe to run more than once: it does nothing if the project already exists.
  */
-import { resolveConfig } from "@agent-workspace/config";
-import { createWorkspace } from "@agent-workspace/core";
+import { resolveConfig } from "@agent-continuity/config";
+import { createWorkspace } from "@agent-continuity/core";
 
-const PROJECT_NAME = "Agent Workspace";
+const PROJECT_NAME = "Agent Continuity";
 
-const PROJECT_CONTEXT = `Agent Workspace is designed primarily for AI agents.
+const PROJECT_CONTEXT = `Agent Continuity is designed primarily for AI agents.
 The conversation is temporary. The agent is replaceable. Project state persists.
 The core service must remain domain agnostic.
 The structured service and tools are the primary agent interface.
@@ -82,7 +82,7 @@ try {
       },
       {
         ref: "dogfood",
-        title: "Manage further Agent Workspace development inside Agent Workspace",
+        title: "Manage further Agent Continuity development inside Agent Continuity",
         status: "backlog",
         priority: "normal",
         description:

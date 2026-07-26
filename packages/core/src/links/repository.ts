@@ -1,5 +1,5 @@
-import { AgentWorkspaceError, type Link } from "@agent-workspace/contracts";
-import { links, projects, tasks, type LinkRow } from "@agent-workspace/database";
+import { AgentContinuityError, type Link } from "@agent-continuity/contracts";
+import { links, projects, tasks, type LinkRow } from "@agent-continuity/database";
 import { and, asc, desc, eq, type SQL } from "drizzle-orm";
 import type { Runtime } from "../runtime.js";
 
@@ -26,7 +26,7 @@ function parseMetadata(raw: string | null): Record<string, unknown> | null {
 export function serialiseMetadata(metadata: unknown): string | null {
   if (metadata === undefined || metadata === null) return null;
   if (typeof metadata !== "object" || Array.isArray(metadata)) {
-    throw new AgentWorkspaceError(
+    throw new AgentContinuityError(
       "INVALID_METADATA",
       "Link metadata must be a JSON object.",
       { received: Array.isArray(metadata) ? "array" : typeof metadata },
@@ -35,7 +35,7 @@ export function serialiseMetadata(metadata: unknown): string | null {
   try {
     return JSON.stringify(metadata);
   } catch {
-    throw new AgentWorkspaceError("INVALID_METADATA", "Link metadata must be JSON serialisable.");
+    throw new AgentContinuityError("INVALID_METADATA", "Link metadata must be JSON serialisable.");
   }
 }
 

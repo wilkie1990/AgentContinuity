@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useDecisions, useProject } from "../api.js";
 import { ProjectHeader } from "../components/ProjectHeader.js";
-import { Empty, ErrorNote, Loading } from "../components/common.js";
+import { ErrorNote } from "../components/common.js";
+import { EmptyState, Skeleton } from "../components/StatePlaceholders.js";
 import { formatDateTime } from "../format.js";
 
 type Scope = "all" | "project" | "task";
@@ -15,7 +16,7 @@ export function DecisionsPage() {
   const projectQuery = useProject(ref);
   const { data, isLoading, error } = useDecisions(ref, search.trim() || undefined);
 
-  if (projectQuery.isLoading) return <Loading />;
+  if (projectQuery.isLoading) return <Skeleton lines={4} />;
   if (!projectQuery.data) return <ErrorNote error={projectQuery.error} />;
 
   const decisions = (data ?? []).filter((decision) =>
@@ -34,13 +35,13 @@ export function DecisionsPage() {
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search decisions"
               aria-label="Search decisions"
-              style={{ width: 220 }}
+              className="decisions-search"
             />
             <select
               value={scope}
               onChange={(event) => setScope(event.target.value as Scope)}
               aria-label="Decision scope"
-              style={{ width: "auto" }}
+              className="filter-select"
             >
               <option value="all">All</option>
               <option value="project">Project decisions</option>
@@ -50,11 +51,16 @@ export function DecisionsPage() {
         </div>
 
         <ErrorNote error={error} />
-        {isLoading && <Loading />}
-        {decisions.length === 0 && (
-          <Empty>
-            No decisions recorded. Agents record decisions when a meaningful choice is made.
-          </Empty>
+        {isLoading && <Skeleton lines={4} />}
+        {!isLoading && decisions.length === 0 && (
+          <EmptyState
+            title="No decisions recorded"
+            hint={
+              search || scope !== "all"
+                ? "Nothing matches the current search or scope. Try clearing them."
+                : "Agents record a decision whenever a meaningful, hard-to-reverse choice is made — architecture, scope, or a behaviour deliberately preserved."
+            }
+          />
         )}
 
         {decisions.map((decision) => (

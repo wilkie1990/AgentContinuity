@@ -1,10 +1,10 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type AddBlockerInput,
   type Blocker,
   type ResolveBlockerInput,
-} from "@agent-workspace/contracts";
-import { blockers, tasks } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import { blockers, tasks } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { ClaimService } from "../claims/service.js";
@@ -72,7 +72,7 @@ export function createBlockerService(
       return runtime.tx(() => {
         const existing = requireBlocker(runtime, blockerRef);
         if (existing.resolvedAt !== null) {
-          throw new AgentWorkspaceError(
+          throw new AgentContinuityError(
             "BLOCKER_ALREADY_RESOLVED",
             `${existing.key} was already resolved.`,
             { blocker: existing.key, resolvedAt: existing.resolvedAt },

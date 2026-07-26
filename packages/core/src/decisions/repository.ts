@@ -1,5 +1,5 @@
-import type { Decision } from "@agent-workspace/contracts";
-import { decisions, projects, tasks, type DecisionRow } from "@agent-workspace/database";
+import type { Decision } from "@agent-continuity/contracts";
+import { decisions, projects, tasks, type DecisionRow } from "@agent-continuity/database";
 import { and, desc, eq, like, or, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { Runtime } from "../runtime.js";

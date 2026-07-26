@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workspace/server",
+  "name": "@agent-continuity/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     }
   },
   "bin": {
-    "agent-workspace-server": "./dist/bin.js"
+    "agent-continuity-server": "./dist/bin.js"
   },
   "files": ["dist"],
   "scripts": {
@@ -22,9 +22,9 @@
     "start": "node dist/bin.js"
   },
   "dependencies": {
-    "@agent-workspace/config": "workspace:*",
-    "@agent-workspace/contracts": "workspace:*",
-    "@agent-workspace/core": "workspace:*",
+    "@agent-continuity/config": "workspace:*",
+    "@agent-continuity/contracts": "workspace:*",
+    "@agent-continuity/core": "workspace:*",
     "@fastify/cors": "^11.3.0",
     "@fastify/static": "^10.1.2",
     "fastify": "^5.10.0",

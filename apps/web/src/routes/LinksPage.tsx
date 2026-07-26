@@ -1,8 +1,9 @@
-import type { Link } from "@agent-workspace/contracts";
+import type { Link } from "@agent-continuity/contracts";
 import { useParams } from "react-router-dom";
 import { client, useLinks, useProject, useWorkspaceMutation } from "../api.js";
 import { ProjectHeader } from "../components/ProjectHeader.js";
-import { Empty, ErrorNote, Loading } from "../components/common.js";
+import { ErrorNote } from "../components/common.js";
+import { EmptyState, Skeleton } from "../components/StatePlaceholders.js";
 
 function groupByType(links: Link[]): [string, Link[]][] {
   const groups = new Map<string, Link[]>();
@@ -24,7 +25,7 @@ export function LinksPage() {
   const { data, isLoading, error } = useLinks(ref);
   const remove = useWorkspaceMutation(ref, (key: string) => client.links.remove(key));
 
-  if (projectQuery.isLoading) return <Loading />;
+  if (projectQuery.isLoading) return <Skeleton lines={4} />;
   if (!projectQuery.data) return <ErrorNote error={projectQuery.error} />;
 
   return (
@@ -33,9 +34,12 @@ export function LinksPage() {
       <div className="page stack">
         <h2>Links</h2>
         <ErrorNote error={error ?? remove.error} />
-        {isLoading && <Loading />}
-        {(data ?? []).length === 0 && (
-          <Empty>No links. Agents attach issues, branches and documents as generic links.</Empty>
+        {isLoading && <Skeleton lines={4} />}
+        {!isLoading && (data ?? []).length === 0 && (
+          <EmptyState
+            title="No links"
+            hint="Agents attach issues, branches, PRs and documents to a project or task as generic links."
+          />
         )}
 
         {groupByType(data ?? []).map(([type, links]) => (

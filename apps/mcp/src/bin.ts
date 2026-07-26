@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { resolveConfig } from "@agent-workspace/config";
-import { createWorkspace } from "@agent-workspace/core";
+import { resolveConfig } from "@agent-continuity/config";
+import { createWorkspace } from "@agent-continuity/core";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createMcpServer } from "./server.js";
 
@@ -9,7 +9,7 @@ const config = resolveConfig();
 const workspace = createWorkspace({ config });
 const server = createMcpServer(workspace);
 
-process.stderr.write(`agent-workspace MCP server using ${config.databasePath}\n`);
+process.stderr.write(`agent-continuity MCP server using ${config.databasePath}\n`);
 
 await server.connect(new StdioServerTransport());
 

@@ -4,8 +4,8 @@ import {
   resolveConfig,
   resolveHostList,
   type WorkspaceConfig,
-} from "@agent-workspace/config";
-import { createWorkspace, type Workspace } from "@agent-workspace/core";
+} from "@agent-continuity/config";
+import { createWorkspace, type Workspace } from "@agent-continuity/core";
 import type { FastifyInstance } from "fastify";
 import { createServer, type Server } from "node:http";
 import { buildServer } from "./app.js";
@@ -108,7 +108,7 @@ export async function startServer(options: StartServerOptions = {}): Promise<Run
 }
 
 const NO_AUTH_WARNING = [
-  "WARNING: Agent Workspace has no authentication in v0.1. Anyone who can reach one of the",
+  "WARNING: Agent Continuity has no authentication in v0.1. Anyone who can reach one of the",
   "URLs above has full read/write access to this workspace.",
 ];
 
@@ -117,7 +117,7 @@ const NO_AUTH_WARNING = [
  * and — only when the bind address reaches beyond loopback — the no-authentication warning.
  */
 export function describeRunningServer(server: Pick<RunningServer, "urls" | "isExposedBeyondLoopback">): string[] {
-  const lines = server.urls.map((url) => `Agent Workspace listening on ${url}`);
+  const lines = server.urls.map((url) => `Agent Continuity listening on ${url}`);
   if (server.isExposedBeyondLoopback) {
     lines.push("", ...NO_AUTH_WARNING);
   }

@@ -1,10 +1,10 @@
-# Agent Workspace
+# Agent Continuity
 
-**Persistent project execution for AI agents.**
+**Persistent project execution across agents and sessions.**
 
 The conversation is temporary. The agent is replaceable. The project state persists.
 
-Agent Workspace is a local-first service that stores structured project state — projects,
+Agent Continuity is a local-first service that stores structured project state — projects,
 context, tasks, acceptance criteria, dependencies, temporary claims, progress, blockers,
 decisions, links and activity — so one AI agent can begin work and another can continue it
 later without the user reconstructing anything by hand.
@@ -16,11 +16,11 @@ mutate and hand over reliably.
 
 | Surface | Purpose |
 | --- | --- |
-| **MCP server** | The primary agent interface: 27 tools over stdio |
+| **MCP server** | The primary agent interface: 35 tools over stdio |
 | **REST API** | `http://127.0.0.1:4732/api/v1`, the single public contract |
-| **CLI** (`aw`) | Terminal access for humans and for agents without MCP (`--json`) |
+| **CLI** (`ac`) | Terminal access for humans and for agents without MCP (`--json`) |
 | **Web UI** | Kanban board, task drawer, context editor, decisions, links, activity |
-| **Skills** | `agent-workspace` and `project-bootstrap` teach agents how to behave |
+| **Skills** | `agent-continuity` and `project-bootstrap` teach agents how to behave |
 
 Everything shares one domain layer (`packages/core`); no adapter holds its own business
 rules.
@@ -34,7 +34,7 @@ pnpm build
 # Start the API and web UI on http://127.0.0.1:4732
 node apps/cli/dist/bin.js server
 
-# Optional: create the Agent Workspace project described in the specification
+# Optional: create the Agent Continuity project described in the specification
 pnpm seed
 ```
 
@@ -45,30 +45,43 @@ Open <http://127.0.0.1:4732> for the board.
 ```json
 {
   "mcpServers": {
-    "agent-workspace": {
+    "agent-continuity": {
       "command": "node",
-      "args": ["/absolute/path/to/AgentWorkspace/apps/mcp/dist/bin.js"]
+      "args": ["/absolute/path/to/AgentContinuity/apps/mcp/dist/bin.js"]
     }
   }
 }
 ```
 
-Then copy `skills/agent-workspace` and `skills/project-bootstrap` into your agent's skills
+Then copy `skills/agent-continuity` and `skills/project-bootstrap` into your agent's skills
 directory (for Claude Code, `~/.claude/skills/`).
+
+For Codex, this repository already includes the required project-scoped setup:
+
+- `.codex/config.toml` registers the `agent-continuity` MCP server from
+  `apps/mcp/dist/bin.js`.
+- `.agents/skills/` exposes the `agent-continuity` and `project-bootstrap` skills.
+
+After rebuilding the repository, restart Codex (or restart the IDE extension) so the
+renamed MCP process and skill catalog are reloaded. No separate MCP installation is required.
 
 ### Use the CLI
 
 ```bash
-alias aw="node /absolute/path/to/AgentWorkspace/apps/cli/dist/bin.js"
+alias ac="node /absolute/path/to/AgentContinuity/apps/cli/dist/bin.js"
 
-aw project create --name "Agent Workspace" --objective "Persistent execution for AI agents"
-aw task create PRJ-0001 --title "Design task claim model" --status ready --priority high \
+ac project create --name "Agent Continuity" --objective "Persistent execution for AI agents"
+ac task create PRJ-0001 --title "Design task claim model" --status ready --priority high \
   --criterion "Defines expiry behaviour"
-aw task list PRJ-0001 --actionable
-aw task claim TASK-0001 --actor codex --session abc123
-aw task progress TASK-0001 "Initial lease data model designed."
-aw task complete TASK-0001
-aw activity PRJ-0001
+ac task list PRJ-0001 --actionable
+ac task claim TASK-0001 --actor codex --session abc123
+ac task plan TASK-0001 "Inspect" "Implement" "Verify"
+ac task heartbeat TASK-0001 --phase "Implement"
+ac task checkpoint TASK-0001 --completed "Inspection" --working-on "Implementation" --next "Verify"
+ac task progress TASK-0001 "Initial lease data model designed."
+ac attention
+ac task complete TASK-0001
+ac activity PRJ-0001
 ```
 
 Every read command supports `--json`.
@@ -83,6 +96,10 @@ Every read command supports `--json`.
 - A **claim** is a temporary lease (30 minutes by default), not an assignment. It expires,
   it renews itself whenever the owner records real work, and anyone can reclaim a lapsed
   one.
+- An **execution** records who is actively working, heartbeat health, current phase and origin.
+  **Checkpoints**, **work plans** and automatic **handoffs** make interrupted work resumable.
+- The **Needs Attention** inbox surfaces stale or interrupted execution, handoffs, blockers
+  and review work. Acceptance-criterion **evidence** links completion to proof.
 - **Progress** records milestones, **decisions** record choices and their reasoning,
   **blockers** record what stopped the work, and **activity** is the append-only history of
   everything.
@@ -92,11 +109,11 @@ Identifiers are human readable — `PRJ-0001`, `TASK-0042`, `DEC-0007`, `BLK-001
 
 ## Configuration
 
-Defaults live in `~/.agent-workspace/`:
+Defaults live in `~/.agent-continuity/`:
 
 ```
-~/.agent-workspace/workspace.db      SQLite database
-~/.agent-workspace/config.json       optional configuration
+~/.agent-continuity/workspace.db      SQLite database
+~/.agent-continuity/config.json       optional configuration
 ```
 
 ```json
@@ -106,9 +123,9 @@ Defaults live in `~/.agent-workspace/`:
 }
 ```
 
-Environment variables override the file: `AGENT_WORKSPACE_HOST`, `AGENT_WORKSPACE_PORT`,
-`AGENT_WORKSPACE_DATA_DIR`, `AGENT_WORKSPACE_DATABASE_PATH`,
-`AGENT_WORKSPACE_CLAIM_TTL_MINUTES`, `AGENT_WORKSPACE_LOG_LEVEL`.
+Environment variables override the file: `AGENT_CONTINUITY_HOST`, `AGENT_CONTINUITY_PORT`,
+`AGENT_CONTINUITY_DATA_DIR`, `AGENT_CONTINUITY_DATABASE_PATH`,
+`AGENT_CONTINUITY_CLAIM_TTL_MINUTES`, `AGENT_CONTINUITY_LOG_LEVEL`.
 
 The server binds to `127.0.0.1` and never listens publicly by default. v0.1 has no
 authentication, no multi-user support and no cloud component.
@@ -146,14 +163,14 @@ node apps/cli/dist/bin.js server --host 0.0.0.0
 The banner always lists concrete URLs — it never prints `http://0.0.0.0:PORT`, which is not a
 URL anyone can open.
 
-`AGENT_WORKSPACE_HOST` and `config.json`'s `server.host` accept the same values, including a
+`AGENT_CONTINUITY_HOST` and `config.json`'s `server.host` accept the same values, including a
 comma-separated list, if you'd rather configure this once instead of passing a flag every time:
 
 ```json
 { "server": { "host": "loopback,tailscale", "port": 4732 } }
 ```
 
-Setting it in `config.json` also keeps the `aw` CLI pointed at the right address, which a
+Setting it in `config.json` also keeps the `ac` CLI pointed at the right address, which a
 command-line flag alone cannot do.
 
 ## Documentation
@@ -167,14 +184,14 @@ command-line flag alone cannot do.
 
 Included: local service, SQLite persistence, REST API, MCP server, CLI, web UI, Kanban
 board, project and task context, acceptance criteria, dependencies, claims, progress,
-blockers, decisions, generic links, activity timeline, project bootstrap, and the two
-Skills.
+blockers, decisions, generic links, activity timeline, project bootstrap, permanent task
+and project deletion, and the two Skills.
 
 Deliberately excluded: authentication, cloud hosting, multi-user, real-time collaboration,
 native GitHub/Jira integrations, automatic Git operations, mobile, custom workflows,
 billing, agent performance metrics.
 
-Agent Workspace is not a Trello replacement, not a Jira replacement and not an AI memory
+Agent Continuity is not a Trello replacement, not a Jira replacement and not an AI memory
 database. It is a persistent execution workspace for work performed through AI agents. The
 board visualises work for humans; the API and MCP tools expose work to agents; Skills teach
 agents how to behave. The project state survives them all.

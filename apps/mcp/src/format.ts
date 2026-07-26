@@ -8,9 +8,13 @@ import type {
   ProjectDetail,
   ProjectSummary,
   TaskClaim,
+  TaskCheckpoint,
+  TaskExecution,
+  WorkPlanItem,
+  NeedsAttentionItem,
   TaskDetail,
   TaskSummary,
-} from "@agent-workspace/contracts";
+} from "@agent-continuity/contracts";
 
 const STATUS_LABELS: Record<string, string> = {
   backlog: "Backlog",
@@ -53,6 +57,32 @@ export function renderCriteria(criteria: AcceptanceCriterion[]): string[] {
   return criteria.map(
     (criterion) => `[${criterion.isComplete ? "✓" : " "}] ${criterion.description}`,
   );
+}
+
+export function renderExecution(execution: TaskExecution | null): string[] {
+  if (!execution) return [];
+  return [
+    `${execution.actor}${execution.sessionId ? ` (session ${execution.sessionId})` : ""} — ${execution.health}`,
+    execution.currentPhase ? `phase: ${execution.currentPhase}` : null,
+    `last heartbeat: ${execution.lastHeartbeatAt}`,
+    execution.terminationReason ? `ended: ${execution.terminationReason}` : null,
+  ].filter((line): line is string => line !== null);
+}
+
+export function renderCheckpoints(checkpoints: TaskCheckpoint[]): string[] {
+  return checkpoints.map((checkpoint) =>
+    `${checkpoint.createdAt} — completed: ${checkpoint.completed}; working on: ${checkpoint.workingOn}; next: ${checkpoint.next}${checkpoint.uncertainty ? `; uncertainty: ${checkpoint.uncertainty}` : ""}`,
+  );
+}
+
+export function renderWorkPlan(items: WorkPlanItem[]): string[] {
+  return items.map((item) => `[${item.status}] ${item.title}`);
+}
+
+export function renderAttention(items: NeedsAttentionItem[]): string {
+  return items.length === 0
+    ? "No work needs attention."
+    : items.map((item) => `${item.taskKey} — ${item.reason}: ${item.requiredAction}`).join("\n");
 }
 
 export function renderProjectLine(project: ProjectSummary): string {
@@ -184,6 +214,7 @@ export function renderTaskDetail(task: TaskDetail): string {
     section("Context", task.context ? [task.context] : []),
     section("Acceptance criteria", renderCriteria(task.acceptanceCriteria)),
     section("Active claim", renderClaim(task.claim)),
+    section("Execution", renderExecution(task.execution)),
     section("Progress", task.progress.map(renderProgressLine)),
     section("Active blockers", task.activeBlockers.map(renderBlockerLine)),
     section(

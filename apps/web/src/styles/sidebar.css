@@ -3,4 +3,60 @@
    owned by the shell task, since the sidebar mechanics (open/close,
    permanent column at desktop) are part of the shared foundation.
    This file is for the richer project-state presentation that task
-   adds inside the sidebar — intentionally empty until then. */
+   adds inside the sidebar, plus the .project-state* classes shared
+   with the project list page (routes/ProjectListPage.tsx) so the two
+   surfaces present a project's state identically. */
+
+/* Each nav link grows from a single truncated line to a small stack:
+   name, then progress/flags/activity. Overrides the single-line
+   ellipsis layout defined for .sidebar a in layout.css. */
+.sidebar nav a {
+  flex-direction: column;
+  align-items: stretch;
+  white-space: normal;
+  height: auto;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------- project state */
+/* Shared with routes/ProjectListPage.tsx via components/ProjectStateSummary.tsx. */
+
+.project-state {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.project-state .progress-bar {
+  min-width: 0;
+}
+
+.project-state-empty {
+  padding: 0;
+}
+
+.project-state-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.project-state-activity {
+  padding: 0;
+}
+
+/* badge.blocker (danger) already exists in base.css; in-progress work
+   gets its own accent-colored badge so the two are distinguishable by
+   color alone, without reading the label. */
+.badge.in-progress {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

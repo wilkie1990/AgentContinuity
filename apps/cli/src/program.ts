@@ -1,6 +1,6 @@
-import { createAgentWorkspaceClient, type AgentWorkspaceClient } from "@agent-workspace/client";
-import { resolveConfig } from "@agent-workspace/config";
-import type { ProjectStatus, TaskPriority, TaskStatus } from "@agent-workspace/contracts";
+import { createAgentContinuityClient, type AgentContinuityClient } from "@agent-continuity/client";
+import { resolveConfig } from "@agent-continuity/config";
+import type { ProjectStatus, TaskPriority, TaskStatus } from "@agent-continuity/contracts";
 import { Command, Option } from "commander";
 import { readFileSync } from "node:fs";
 import {
@@ -20,15 +20,15 @@ export const CLI_VERSION = "0.1.0";
 
 type GlobalOptions = { url?: string; actor?: string; session?: string };
 
-function clientFor(command: Command): AgentWorkspaceClient {
+function clientFor(command: Command): AgentContinuityClient {
   const globals = command.optsWithGlobals<GlobalOptions>();
   const config = resolveConfig();
-  return createAgentWorkspaceClient({ baseUrl: globals.url ?? config.baseUrl });
+  return createAgentContinuityClient({ baseUrl: globals.url ?? config.baseUrl });
 }
 
 function actorFor(command: Command): { actor?: string; sessionId?: string } {
   const globals = command.optsWithGlobals<GlobalOptions>();
-  const actor = globals.actor ?? process.env.AGENT_WORKSPACE_ACTOR;
+  const actor = globals.actor ?? process.env.AGENT_CONTINUITY_ACTOR;
   return {
     ...(actor ? { actor } : {}),
     ...(globals.session ? { sessionId: globals.session } : {}),
@@ -44,10 +44,10 @@ export function buildProgram(): Command {
   const program = new Command();
 
   program
-    .name("aw")
-    .description("Agent Workspace — persistent project execution for AI agents")
+    .name("ac")
+    .description("Agent Continuity — Persistent project execution across agents and sessions.")
     .version(CLI_VERSION)
-    .option("--url <url>", "Base URL of the local Agent Workspace server")
+    .option("--url <url>", "Base URL of the local Agent Continuity server")
     .option("--actor <actor>", "Identifier recorded against mutations")
     .option("--session <id>", "Session identifier recorded against mutations");
 
@@ -74,7 +74,7 @@ export function buildProgram(): Command {
       }
       const host = options.tailscale ? "loopback,tailscale" : options.host;
 
-      const { startServer, describeRunningServer } = await import("@agent-workspace/server");
+      const { startServer, describeRunningServer } = await import("@agent-continuity/server");
       const config = resolveConfig({
         server: {
           ...(host ? { host } : {}),
@@ -94,9 +94,9 @@ export function buildProgram(): Command {
     .description("Start the MCP server on stdio")
     .action(async () => {
       const [{ createMcpServer }, { StdioServerTransport }, { createWorkspace }] = await Promise.all([
-        import("@agent-workspace/mcp"),
+        import("@agent-continuity/mcp"),
         import("@modelcontextprotocol/sdk/server/stdio.js"),
-        import("@agent-workspace/core"),
+        import("@agent-continuity/core"),
       ]);
       const workspace = createWorkspace({ config: resolveConfig() });
       await createMcpServer(workspace).connect(new StdioServerTransport());
@@ -220,6 +220,39 @@ export function buildProgram(): Command {
     .action(async function (this: Command, ref: string) {
       const archived = await clientFor(this).projects.archive(ref, actorFor(this).actor);
       print(`Archived ${archived.key}.`);
+    });
+
+  project
+    .command("delete <project>")
+    .description("Permanently delete a project and everything it owns")
+    .option("--force", "Delete even when one of its tasks is actively claimed")
+    .option("--yes", "Skip the confirmation summary")
+    .action(async function (this: Command, ref: string, options: { force?: boolean; yes?: boolean }) {
+      const client = clientFor(this);
+
+      if (!options.yes) {
+        // Show what will go before it goes, since there is no undo.
+        const detail = await client.projects.get(ref);
+        print(`${detail.key} — ${detail.name} (${detail.status})`);
+        print(
+          `  ${detail.taskTotal} tasks · ${detail.decisions.length} decisions · ${detail.links.length} links`,
+        );
+        print("  This cannot be undone. Re-run with --yes to confirm.");
+        return;
+      }
+
+      const deleted = await client.projects.remove(ref, {
+        force: options.force ?? false,
+        ...actorFor(this),
+      });
+      print(`Deleted ${deleted.key} — ${deleted.name}.`);
+      const { removed } = deleted;
+      print(
+        `  removed ${removed.tasks} tasks, ${removed.acceptanceCriteria} criteria, ` +
+          `${removed.progress} progress entries, ${removed.blockers} blockers, ${removed.claims} claims, ` +
+          `${removed.dependencies} dependencies, ${removed.decisions} decisions, ${removed.links} links, ` +
+          `${removed.activityEvents} activity events`,
+      );
     });
 
   // ---------------------------------------------------------------------- tasks
@@ -366,6 +399,90 @@ export function buildProgram(): Command {
       const entries = await client.tasks.listProgress(ref);
       if (options.json) return printJson(entries);
       print(entries.length === 0 ? "No progress recorded." : entries.map(progressLine).join("\n"));
+    });
+
+  task
+    .command("heartbeat <task>")
+    .description("Silently refresh execution liveness; this does not add a progress entry")
+    .option("--phase <phase>", "Current implementation phase")
+    .action(async function (this: Command, ref: string, options: { phase?: string }) {
+      const meta = actorFor(this);
+      const result = await clientFor(this).tasks.heartbeat(ref, {
+        actor: meta.actor ?? "cli",
+        ...(meta.sessionId ? { sessionId: meta.sessionId } : {}),
+        ...(options.phase ? { phase: options.phase } : {}),
+      });
+      print(`Heartbeat recorded${result.execution?.health ? ` (${result.execution.health})` : ""}.`);
+    });
+
+  task
+    .command("execution <task>")
+    .description("Show execution health, checkpoints, work plan and handoff")
+    .option("--json", "Output JSON")
+    .action(async function (this: Command, ref: string, options: { json?: boolean }) {
+      const state = await clientFor(this).tasks.execution(ref);
+      if (options.json) return printJson(state);
+      print([
+        `Execution: ${state.execution ? `${state.execution.actor} — ${state.execution.health}` : "none"}`,
+        `Checkpoints: ${state.checkpoints.length}`,
+        `Work plan: ${state.workPlan.map((item) => `[${item.status}] ${item.title}`).join(" · ") || "none"}`,
+        `Handoff: ${state.handoff?.summary ?? "none"}`,
+      ].join("\n"));
+    });
+
+  task
+    .command("checkpoint <task>")
+    .description("Record a meaningful completed / working-on / next checkpoint")
+    .requiredOption("--completed <text>")
+    .requiredOption("--working-on <text>")
+    .requiredOption("--next <text>")
+    .option("--uncertainty <text>")
+    .action(async function (this: Command, ref: string, options: { completed: string; workingOn: string; next: string; uncertainty?: string }) {
+      await clientFor(this).tasks.checkpoint(ref, { completed: options.completed, workingOn: options.workingOn, next: options.next, ...(options.uncertainty ? { uncertainty: options.uncertainty } : {}), ...actorFor(this) });
+      print(`Checkpoint recorded for ${ref}.`);
+    });
+
+  task
+    .command("plan <task> [items...]")
+    .description("Show/set a lightweight work plan, or update an item status")
+    .option("--item <item>", "Work-plan item key")
+    .option("--status <status>", "pending, active, completed, or skipped")
+    .option("--json", "Output JSON")
+    .action(async function (this: Command, ref: string, items: string[], options: { item?: string; status?: "pending" | "active" | "completed" | "skipped"; json?: boolean }) {
+      const client = clientFor(this);
+      const result = items.length > 0
+        ? await client.tasks.setWorkPlan(ref, { items, ...actorFor(this) })
+        : options.item && options.status
+          ? [await client.tasks.updateWorkPlanItem(ref, options.item, { status: options.status, ...actorFor(this) })]
+          : await client.tasks.workPlan(ref);
+      if (options.json) return printJson(result);
+      print(result.length === 0 ? "No work plan." : result.map((item) => `[${item.status}] ${item.title}`).join("\n"));
+    });
+
+  task
+    .command("evidence <task> <criterion>")
+    .description("List or attach proof for an acceptance criterion")
+    .option("--type <type>", "Evidence type, required when adding")
+    .option("--reference <reference>")
+    .option("--content <content>")
+    .option("--url <url>")
+    .option("--json", "Output JSON")
+    .action(async function (this: Command, ref: string, criterion: string, options: { type?: string; reference?: string; content?: string; url?: string; json?: boolean }) {
+      const client = clientFor(this);
+      if (options.type) await client.tasks.addCriterionEvidence(ref, await criterionId(client, ref, criterion), { type: options.type, ...(options.reference ? { reference: options.reference } : {}), ...(options.content ? { content: options.content } : {}), ...(options.url ? { url: options.url } : {}), ...actorFor(this) });
+      const evidence = await client.tasks.criterionEvidence(ref, await criterionId(client, ref, criterion));
+      if (options.json) return printJson(evidence);
+      print(evidence.length === 0 ? "No evidence." : evidence.map((item) => `${item.type}: ${item.reference ?? item.url ?? item.content ?? ""}`).join("\n"));
+    });
+
+  program
+    .command("attention")
+    .description("List stale, blocked, review, or handed-off work needing attention")
+    .option("--json", "Output JSON")
+    .action(async function (this: Command, options: { json?: boolean }) {
+      const items = await clientFor(this).attention.list();
+      if (options.json) return printJson(items);
+      print(items.length === 0 ? "No work needs attention." : items.map((item) => `${item.taskKey} — ${item.reason}: ${item.requiredAction}`).join("\n"));
     });
 
   task
@@ -620,7 +737,7 @@ function collect(value: string, previous: string[]): string[] {
 
 /** Acceptance criteria are addressed by id over HTTP, so resolve a description first. */
 async function criterionId(
-  client: AgentWorkspaceClient,
+  client: AgentContinuityClient,
   taskRef: string,
   reference: string,
 ): Promise<string> {

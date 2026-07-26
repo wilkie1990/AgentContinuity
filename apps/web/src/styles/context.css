@@ -1,0 +1,195 @@
+/* Saved context reads as a durable field note, not an input waiting to be
+   filled. The accent rail is the one visual signature: it distinguishes
+   persistent working memory from the app's ordinary cards and forms. */
+
+.context-editor {
+  min-width: 0;
+}
+
+.context-read-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-2);
+}
+
+.context-document,
+.context-empty {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: var(--space-4);
+}
+
+.context-editor--page .context-document,
+.context-editor--page .context-empty {
+  min-height: min(50vh, 560px);
+}
+
+.context-document {
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.context-document > :first-child {
+  margin-top: 0;
+}
+
+.context-document > :last-child {
+  margin-bottom: 0;
+}
+
+.context-document h1,
+.context-document h2,
+.context-document h3,
+.context-document h4 {
+  color: var(--text);
+  margin: 1.5em 0 0.55em;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.context-document h1 {
+  font-size: 1.5em;
+}
+
+.context-document h2 {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-1);
+  font-size: 1.25em;
+}
+
+.context-document h3 {
+  font-size: 1.08em;
+}
+
+.context-document h4 {
+  font-size: 1em;
+}
+
+.context-document p,
+.context-document ul,
+.context-document ol,
+.context-document blockquote,
+.context-document pre,
+.context-document table {
+  margin: 0 0 1em;
+}
+
+.context-document ul,
+.context-document ol {
+  padding-left: var(--space-6);
+}
+
+.context-document li + li {
+  margin-top: var(--space-1);
+}
+
+.context-document blockquote {
+  margin-left: 0;
+  border-left: 3px solid var(--border);
+  padding-left: var(--space-4);
+  color: var(--muted);
+}
+
+.context-document code,
+.context-textarea {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+.context-document :not(pre) > code {
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+.context-document pre {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.context-document table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.context-document th,
+.context-document td {
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+}
+
+.context-document img {
+  max-width: 100%;
+  height: auto;
+}
+
+.context-empty {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.context-empty p {
+  margin: 0;
+}
+
+.context-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.context-textarea {
+  min-height: 12rem;
+  line-height: 1.55;
+}
+
+.context-editor--page .context-textarea {
+  min-height: 50vh;
+}
+
+.context-edit-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.context-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.context-actions > button {
+  flex: 1;
+}
+
+@media (min-width: 640px) {
+  .context-document,
+  .context-empty {
+    padding: var(--space-5) var(--space-6);
+  }
+
+  .context-edit-footer {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .context-actions > button {
+    flex: none;
+  }
+}

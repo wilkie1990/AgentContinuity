@@ -1,11 +1,11 @@
 import {
-  AgentWorkspaceError,
+  AgentContinuityError,
   type AddLinksInput,
   type Link,
   type LinkInput,
   type ListLinksQuery,
-} from "@agent-workspace/contracts";
-import { links, type ProjectRow, type TaskRow } from "@agent-workspace/database";
+} from "@agent-continuity/contracts";
+import { links, type ProjectRow, type TaskRow } from "@agent-continuity/database";
 import { eq } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
 import type { ClaimService } from "../claims/service.js";
@@ -25,7 +25,7 @@ export function createLinkService(
     if (!ref) return null;
     const task = requireTask(runtime, ref);
     if (task.projectId !== project.id) {
-      throw new AgentWorkspaceError(
+      throw new AgentContinuityError(
         "VALIDATION_ERROR",
         `${task.key} belongs to a different project and cannot be linked from ${project.key}.`,
         { task: task.key, project: project.key },

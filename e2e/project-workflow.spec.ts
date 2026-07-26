@@ -13,8 +13,14 @@ test("a human can take a task from creation to completion", async ({ page }) => 
 
   const drawer = await openTask(page, "Design task claim model");
 
-  await drawer.getByLabel("Task context").fill("Permanent assignment was rejected: sessions end.");
-  await drawer.getByRole("button", { name: "Save" }).first().click();
+  await drawer.getByRole("button", { name: "Edit context", exact: true }).click();
+  await drawer
+    .getByLabel("Task context", { exact: true })
+    .fill("Permanent assignment was rejected: sessions end.");
+  await drawer.getByRole("button", { name: "Save context", exact: true }).click();
+  await expect(drawer.getByRole("region", { name: "Task context preview" })).toContainText(
+    "Permanent assignment was rejected: sessions end.",
+  );
 
   await drawer.getByLabel("Add criterion").fill("Defines expiry behaviour");
   await drawer.getByRole("button", { name: "Add criterion" }).click();
@@ -41,7 +47,11 @@ test("a human can take a task from creation to completion", async ({ page }) => 
   // The context survives a reload, which is the whole point of the workspace.
   await page.reload();
   const reopened = await openTask(page, "Design task claim model");
-  await expect(reopened.getByLabel("Task context")).toHaveValue(
+  await expect(reopened.getByRole("region", { name: "Task context preview" })).toContainText(
+    "Permanent assignment was rejected: sessions end.",
+  );
+  await reopened.getByRole("button", { name: "Edit context", exact: true }).click();
+  await expect(reopened.getByLabel("Task context", { exact: true })).toHaveValue(
     "Permanent assignment was rejected: sessions end.",
   );
 });

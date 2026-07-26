@@ -20,6 +20,11 @@ export type TaskPriority = z.infer<typeof taskPrioritySchema>;
 
 export const TASK_PRIORITIES: readonly TaskPriority[] = taskPrioritySchema.options;
 
+export const executionHealthSchema = z.enum(["active", "idle", "stale", "disconnected", "finished"]);
+export type ExecutionHealth = z.infer<typeof executionHealthSchema>;
+export const workPlanStatusSchema = z.enum(["pending", "active", "completed", "skipped"]);
+export type WorkPlanStatus = z.infer<typeof workPlanStatusSchema>;
+
 /**
  * Every domain mutation recorded in the activity stream.
  * The relational tables remain the source of truth for current state; this is history.
@@ -40,6 +45,12 @@ export const activityEventTypeSchema = z.enum([
   "task.claim_renewed",
   "task.claim_released",
   "task.claim_expired",
+  "execution.started",
+  "execution.resumed",
+  "execution.ended",
+  "task.checkpointed",
+  "work_plan.updated",
+  "criterion_evidence.added",
   "task.progress_added",
   "task.blocked",
   "task.blocker_resolved",

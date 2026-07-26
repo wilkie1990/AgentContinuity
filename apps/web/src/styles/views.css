@@ -1,6 +1,6 @@
 /* Owned by the drawer task (TASK-0007), which also covers the secondary
-   views. Moved as-is from the old styles.css during the stylesheet
-   split; not yet responsive. */
+   views (activity, decisions, links, context). Mobile-first; the >=640px
+   rules recover the denser, wider-screen layout. */
 
 .list-item {
   border: 1px solid var(--border);
@@ -15,14 +15,42 @@
 
 .timeline .entry {
   display: grid;
-  grid-template-columns: 62px 1fr;
-  gap: 10px;
+  grid-template-columns: 56px 1fr;
+  gap: var(--space-2);
   padding: 7px 0;
   border-bottom: 1px solid var(--border);
 }
 
 .timeline .entry:last-child { border-bottom: none; }
 .timeline time { color: var(--muted); font-size: 12px; }
+
+.project-execution-summary { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+
+.attention-list { display: grid; gap: var(--space-2); }
+.attention-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.badge.attention-reason { background: var(--warning-soft); color: var(--warning); }
+.badge.attention-stale_execution, .badge.attention-interrupted_execution { background: var(--danger-soft); color: var(--danger); }
+.attention-task { display: flex; align-items: center; gap: var(--space-2); width: fit-content; font-weight: 600; }
+.attention-action { margin: 0; font-size: var(--text-sm); }
+
+/* A fixed 62px time column is wasteful once the row itself is only
+   ~330px wide, so it stacks below 640px instead of sitting beside the
+   event text. */
+@media (max-width: 639px) {
+  .timeline .entry {
+    grid-template-columns: 1fr;
+    row-gap: 2px;
+  }
+}
 
 .project-row {
   display: flex;
@@ -35,3 +63,68 @@
 .project-row:hover { border-color: var(--accent); }
 
 .link-group { display: flex; flex-direction: column; gap: 6px; }
+
+/* Decisions page search box: a fixed width reads fine at desktop but
+   overflows its row on a phone, so it fills the row below 640px instead. */
+.decisions-search { width: 100%; }
+
+@media (min-width: 640px) {
+  .decisions-search { width: 220px; }
+}
+
+/* Filter <select>s (activity task/event/actor, decisions scope): a native
+   select with width:auto sizes to its widest *option*, not the visible
+   label, so a select whose options include long task titles can end up
+   almost full-width even while showing "All tasks". That reads fine once
+   there is room to spare at tablet/desktop, but forces one giant select
+   onto its own row on a phone — so it stays full-width and stacked below
+   640px, and only goes auto-width once the viewport can absorb it. */
+.filter-select { width: 100%; }
+
+@media (min-width: 640px) {
+  .filter-select { width: auto; }
+}
+
+/* ===================================================== empty / loading */
+
+.empty-state {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.empty-state-title {
+  margin: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-line:nth-child(2) { width: 85%; }
+.skeleton-line:nth-child(3) { width: 65%; }
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line { animation: none; }
+}

@@ -46,7 +46,7 @@ running HTTP server.
 | `packages/client` | Typed HTTP client used by the CLI and the web app. |
 | `apps/server` | Fastify application, routes, error translation, static hosting of the UI. |
 | `apps/mcp` | MCP server, tool definitions, agent-focused response rendering. |
-| `apps/cli` | `aw` binary. |
+| `apps/cli` | `ac` binary. |
 | `apps/web` | React + Vite single page application. |
 
 `packages/config` is the one addition to the layout in the specification: `database`,
@@ -115,12 +115,23 @@ Cannot add TASK-0012 as a dependency of TASK-0008 because it would create the
 dependency cycle TASK-0008 → TASK-0012 → TASK-0008.
 ```
 
-**Deletion.** `tasks.delete` is the one destructive operation. It removes everything the task
-owns and lets everything it merely references survive: subtasks are promoted to top level and
-task-scoped decisions fall back to project scope. The `task.deleted` event is recorded against
-the *project* rather than the task, so it is not swept away by the same cascade that removes
-the task's own history. An active claim blocks deletion unless `force` is passed, since a live
-lease means another agent is mid-work.
+**Deletion.** `tasks.delete` and `projects.delete` are the destructive operations. Task
+deletion removes everything the task owns and lets everything it merely references survive:
+subtasks are promoted to top level and task-scoped decisions fall back to project scope. The
+`task.deleted` event is recorded against the *project* rather than the task, so it is not
+swept away by the same cascade that removes the task's own history. An active claim blocks
+deletion unless `force` is passed, since a live lease means another agent is mid-work.
+
+Project deletion has no such higher scope to fall back on — the project is the top of the
+hierarchy, so its cascade takes every task, decision, link and activity event with it, and
+there is nowhere for a `project.deleted` event to survive. Rather than inventing a
+project-less event scope, deletion is not recorded in the queryable activity timeline at all;
+the returned removal summary is the durable record for the caller, and the server writes one
+line to its own process log as a lightweight, best-effort operational trace (see the project's
+recorded decision for the reasoning). The claim guard is the same shape as task deletion,
+scaled to the whole project: any task inside it holding an active claim blocks deletion unless
+`force` is passed. Deletion does not require the project to be archived first — archiving and
+deletion are different operations serving different needs.
 
 **Context is not a log.** Project and task context are replaced wholesale and their
 activity events record only `previousLength` and `newLength`, never the text — activity
@@ -139,7 +150,7 @@ cursor is simply an encoded sequence number.
 
 ## Errors
 
-`AgentWorkspaceError` carries a typed `code`, a human readable message and structured
+`AgentContinuityError` carries a typed `code`, a human readable message and structured
 `details`. Each transport translates it once:
 
 - REST maps the code to a status (`apps/server/src/errors.ts`) and returns
@@ -147,7 +158,7 @@ cursor is simply an encoded sequence number.
 - MCP returns `isError: true` with the code as the first token of the text, so an agent can
   distinguish `TASK_ALREADY_CLAIMED` from `TASK_NOT_FOUND`.
 - The CLI prints `CODE: message` to stderr and exits non-zero.
-- `packages/client` reconstructs the original `AgentWorkspaceError` from the envelope.
+- `packages/client` reconstructs the original `AgentContinuityError` from the envelope.
 
 ## Listening on more than one address
 
@@ -168,7 +179,7 @@ CORS is enabled to let a separately hosted Vite dev server reach the API during 
 built UI is served from the same origin.
 
 Widening the listening address is opt-in and never inferred (`DEC-0001`). `packages/config`
-resolves `server.host` — from `--host`, `AGENT_WORKSPACE_HOST`, or `config.json` — and accepts
+resolves `server.host` — from `--host`, `AGENT_CONTINUITY_HOST`, or `config.json` — and accepts
 one alias: `"tailscale"`, resolved in `packages/config/src/network.ts` to the machine's actual
 Tailscale interface address (an IPv4 address in `100.64.0.0/10`, detected from OS network
 interfaces via `node:os`, not by shelling out to the `tailscale` binary). Binding that single

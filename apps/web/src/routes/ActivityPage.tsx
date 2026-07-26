@@ -1,10 +1,11 @@
-import type { ActivityEvent, ActivityEventType } from "@agent-workspace/contracts";
-import { ACTIVITY_EVENT_TYPES } from "@agent-workspace/contracts";
+import type { ActivityEvent, ActivityEventType } from "@agent-continuity/contracts";
+import { ACTIVITY_EVENT_TYPES } from "@agent-continuity/contracts";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { LIVE_POLL_MS, client, useProject, useTasks } from "../api.js";
 import { ProjectHeader } from "../components/ProjectHeader.js";
-import { Empty, ErrorNote, Loading } from "../components/common.js";
+import { ErrorNote } from "../components/common.js";
+import { EmptyState, Skeleton } from "../components/StatePlaceholders.js";
 import { describeEvent, eventDetail, formatDateTime, formatTime } from "../format.js";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
@@ -33,7 +34,7 @@ export function ActivityPage() {
     refetchInterval: LIVE_POLL_MS,
   });
 
-  if (projectQuery.isLoading) return <Loading />;
+  if (projectQuery.isLoading) return <Skeleton lines={4} />;
   if (!projectQuery.data) return <ErrorNote error={projectQuery.error} />;
 
   const events: ActivityEvent[] = (query.data?.pages ?? []).flatMap((page) => page.events);
@@ -54,7 +55,7 @@ export function ActivityPage() {
               value={task}
               onChange={(event) => setTask(event.target.value)}
               aria-label="Filter by task"
-              style={{ width: "auto" }}
+              className="filter-select"
             >
               <option value="">All tasks</option>
               {(tasksQuery.data ?? []).map((candidate) => (
@@ -67,7 +68,7 @@ export function ActivityPage() {
               value={eventType}
               onChange={(event) => setEventType(event.target.value)}
               aria-label="Filter by event type"
-              style={{ width: "auto" }}
+              className="filter-select"
             >
               <option value="">All events</option>
               {ACTIVITY_EVENT_TYPES.map((type) => (
@@ -80,7 +81,7 @@ export function ActivityPage() {
               value={actor}
               onChange={(event) => setActor(event.target.value)}
               aria-label="Filter by actor"
-              style={{ width: "auto" }}
+              className="filter-select"
             >
               <option value="">All actors</option>
               {actors.map((candidate) => (
@@ -93,35 +94,46 @@ export function ActivityPage() {
         </div>
 
         <ErrorNote error={query.error} />
-        {query.isLoading && <Loading />}
-        {events.length === 0 && !query.isLoading && <Empty>No activity yet.</Empty>}
+        {query.isLoading && <Skeleton lines={5} />}
+        {events.length === 0 && !query.isLoading && (
+          <EmptyState
+            title="No activity yet"
+            hint={
+              task || eventType || actor
+                ? "Nothing matches the current filters. Try widening or clearing them."
+                : "Every claim, edit, decision and blocker on this project will show up here as it happens."
+            }
+          />
+        )}
 
-        <div className="timeline card">
-          {events.map((event) => {
-            const day = formatDateTime(event.createdAt).split(",")[0] ?? "";
-            const showDay = day !== lastDay;
-            lastDay = day;
-            const detail = eventDetail(event.eventType, event.payload);
+        {events.length > 0 && (
+          <div className="timeline card">
+            {events.map((event) => {
+              const day = formatDateTime(event.createdAt).split(",")[0] ?? "";
+              const showDay = day !== lastDay;
+              lastDay = day;
+              const detail = eventDetail(event.eventType, event.payload);
 
-            return (
-              <div key={event.id}>
-                {showDay && (
-                  <h4 style={{ marginTop: 12 }}>{day}</h4>
-                )}
-                <div className="entry">
-                  <time>{formatTime(event.createdAt)}</time>
-                  <div>
+              return (
+                <div key={event.id}>
+                  {showDay && (
+                    <h4 style={{ marginTop: 12 }}>{day}</h4>
+                  )}
+                  <div className="entry">
+                    <time>{formatTime(event.createdAt)}</time>
                     <div>
-                      <strong>{event.actor ?? "system"}</strong> {describeEvent(event.eventType)}
-                      {event.taskKey && <span className="key"> {event.taskKey}</span>}
+                      <div>
+                        <strong>{event.actor ?? "system"}</strong> {describeEvent(event.eventType)}
+                        {event.taskKey && <span className="key"> {event.taskKey}</span>}
+                      </div>
+                      {detail && <div className="small muted">{detail}</div>}
                     </div>
-                    {detail && <div className="small muted">{detail}</div>}
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {query.hasNextPage && (
           <button onClick={() => void query.fetchNextPage()} disabled={query.isFetchingNextPage}>

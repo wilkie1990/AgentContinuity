@@ -1,4 +1,4 @@
-import { ACTIVITY_EVENT_TYPES } from "@agent-workspace/contracts";
+import { ACTIVITY_EVENT_TYPES } from "@agent-continuity/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkspace, seedProject, seedTask, type TestWorkspace } from "./helpers.js";
 
@@ -31,6 +31,7 @@ describe("activity", () => {
     expect(events.map((event) => event.eventType)).toEqual([
       "decision.recorded",
       "task.progress_added",
+      "execution.started",
       "task.claimed",
       "task.status_changed",
       "task.created",
@@ -108,6 +109,11 @@ describe("activity", () => {
 
     workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
     workspace.claims.renew(task.key, { actor: "codex", sessionId: "abc" });
+    workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
+    workspace.claims.heartbeat(task.key, { actor: "codex", sessionId: "abc", phase: "Designing" });
+    workspace.executions.checkpoint(task.key, { completed: "Modelled the domain", workingOn: "Service layer", next: "Add routes", actor: "codex", sessionId: "abc" });
+    const [plan] = workspace.executions.setWorkPlan(task.key, { items: ["Design", "Implement"], actor: "codex" });
+    workspace.executions.updateWorkPlanItem(task.key, plan!.id, { status: "completed", actor: "codex" });
     workspace.tasks.updateContext(task.key, { context: "Task memory", actor: "codex" });
     workspace.tasks.update(task.key, { title: "Main task", actor: "codex" });
     workspace.tasks.addProgress(task.key, { content: "Data model implemented.", actor: "codex" });
@@ -115,6 +121,7 @@ describe("activity", () => {
     const criteria = workspace.tasks.addAcceptanceCriteria(task.key, ["Outcome is checkable"], {
       actor: "codex",
     });
+    workspace.executions.addEvidence(task.key, criteria[0]!.id, { type: "test", reference: "activity.test.ts", actor: "codex" });
     workspace.tasks.completeAcceptanceCriterion(task.key, criteria[0]!.id, { actor: "codex" });
     workspace.tasks.reopenAcceptanceCriterion(task.key, criteria[0]!.id, { actor: "codex" });
 
@@ -133,7 +140,7 @@ describe("activity", () => {
       actor: "codex",
     });
 
-    const [link] = workspace.links.add(project.key, { type: "issue", reference: "AW-42", actor: "codex" });
+    const [link] = workspace.links.add(project.key, { type: "issue", reference: "AC-42", actor: "codex" });
     workspace.links.remove(link!.key, { actor: "codex" });
 
     workspace.claims.release(task.key, { actor: "codex", sessionId: "abc", reason: "handover" });

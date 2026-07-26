@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workspace/client",
+  "name": "@agent-continuity/client",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,6 @@
     "clean": "tsc -b --clean"
   },
   "dependencies": {
-    "@agent-workspace/contracts": "workspace:*"
+    "@agent-continuity/contracts": "workspace:*"
   }
 }

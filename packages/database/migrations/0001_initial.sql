@@ -1,4 +1,4 @@
--- Agent Workspace v0.1 initial schema.
+-- Agent Continuity v0.1 initial schema.
 -- All timestamps are ISO-8601 UTC strings so lexicographic comparison equals chronological order.
 
 CREATE TABLE projects (

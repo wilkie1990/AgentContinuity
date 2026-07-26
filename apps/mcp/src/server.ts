@@ -1,11 +1,11 @@
-import type { Workspace } from "@agent-workspace/core";
+import type { Workspace } from "@agent-continuity/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerTools } from "./tools.js";
 
-export const MCP_SERVER_NAME = "agent-workspace";
+export const MCP_SERVER_NAME = "agent-continuity";
 export const MCP_SERVER_VERSION = "0.1.0";
 
-const INSTRUCTIONS = `Agent Workspace stores persistent project state so work survives the end of a conversation.
+const INSTRUCTIONS = `Agent Continuity stores persistent project state so work survives the end of a conversation.
 
 Before creating a project, call projects_list and prefer continuing an existing project that represents the same work.
 Before meaningful work, call projects_get to read project context, then tasks_list to find actionable work and tasks_get for the full task state.

@@ -1,5 +1,5 @@
 {
-  "name": "@agent-workspace/core",
+  "name": "@agent-continuity/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -22,9 +22,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@agent-workspace/config": "workspace:*",
-    "@agent-workspace/contracts": "workspace:*",
-    "@agent-workspace/database": "workspace:*",
+    "@agent-continuity/config": "workspace:*",
+    "@agent-continuity/contracts": "workspace:*",
+    "@agent-continuity/database": "workspace:*",
     "drizzle-orm": "^0.45.2",
     "zod": "^4.4.3"
   }

@@ -56,12 +56,12 @@ describe("project service", () => {
   it("updates fields and records project.updated", () => {
     const project = seedProject(workspace);
     const updated = workspace.projects.update(project.key, {
-      name: "Agent Workspace v0.1",
+      name: "Agent Continuity v0.1",
       objective: "Persistent execution for AI agents",
       actor: "adam",
     });
 
-    expect(updated.name).toBe("Agent Workspace v0.1");
+    expect(updated.name).toBe("Agent Continuity v0.1");
     expect(eventTypes(workspace, project.key)).toContain("project.updated");
   });
 
@@ -122,5 +122,73 @@ describe("project service", () => {
 
   it("raises PROJECT_NOT_FOUND for an unknown reference", () => {
     expectErrorCode(() => workspace.projects.get("PRJ-9999"), "PROJECT_NOT_FOUND");
+  });
+});
+
+describe("project deletion", () => {
+  let workspace: TestWorkspace;
+
+  beforeEach(() => {
+    workspace = createTestWorkspace();
+  });
+
+  afterEach(() => {
+    workspace.close();
+  });
+
+  it("removes the project and everything it and its tasks own", () => {
+    const project = seedProject(workspace);
+    const task = seedTask(workspace, project.key, "Scratch", { acceptanceCriteria: ["One", "Two"] });
+    workspace.tasks.addProgress(task.key, { content: "Some work", actor: "codex" });
+    workspace.blockers.add(task.key, { description: "Something" });
+    workspace.links.add(project.key, { task: task.key, type: "document", url: "https://x" });
+    workspace.decisions.create(project.key, { title: "A choice", decision: "Made it." });
+
+    const deleted = workspace.projects.delete(project.key, { force: false, actor: "adam" });
+
+    expect(deleted.key).toBe(project.key);
+    expect(deleted.removed.tasks).toBe(1);
+    expect(deleted.removed.acceptanceCriteria).toBe(2);
+    expect(deleted.removed.progress).toBe(1);
+    expect(deleted.removed.blockers).toBe(1);
+    expect(deleted.removed.links).toBe(1);
+    expect(deleted.removed.decisions).toBe(1);
+    expect(deleted.removed.activityEvents).toBeGreaterThan(0);
+
+    expectErrorCode(() => workspace.projects.get(project.key), "PROJECT_NOT_FOUND");
+    expectErrorCode(() => workspace.tasks.get(task.key), "TASK_NOT_FOUND");
+  });
+
+  it("refuses to delete a project with an actively claimed task, unless forced", () => {
+    const project = seedProject(workspace);
+    const task = seedTask(workspace, project.key, "Claimed");
+    workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
+
+    expectErrorCode(
+      () => workspace.projects.delete(project.key, { force: false, actor: "adam" }),
+      "PROJECT_HAS_CLAIMED_TASKS",
+    );
+    expect(workspace.projects.get(project.key).key).toBe(project.key);
+
+    const deleted = workspace.projects.delete(project.key, { force: true, actor: "adam" });
+    expect(deleted.key).toBe(project.key);
+  });
+
+  it("deletes an archived project too — archiving first is not required", () => {
+    const project = seedProject(workspace);
+    workspace.projects.archive(project.key);
+    const deleted = workspace.projects.delete(project.key, { force: false });
+    expect(deleted.key).toBe(project.key);
+  });
+
+  it("does not reuse the project key counter after a deletion", () => {
+    const first = seedProject(workspace, "First");
+    workspace.projects.delete(first.key, { force: false });
+    const second = seedProject(workspace, "Second");
+    expect(second.key).toBe("PRJ-0002");
+  });
+
+  it("raises PROJECT_NOT_FOUND when deleting an unknown reference", () => {
+    expectErrorCode(() => workspace.projects.delete("PRJ-9999", { force: false }), "PROJECT_NOT_FOUND");
   });
 });
