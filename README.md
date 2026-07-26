@@ -14,12 +14,7 @@ mutate and hand over reliably.
 
 ## See it in action
 
-<video
-  src="https://raw.githubusercontent.com/wilkie1990/AgentContinuity/main/apps/video/deliverables/agent-continuity-how-to-1080p.mp4"
-  poster="apps/video/deliverables/agent-continuity-how-to-poster.png"
-  controls
-  width="100%"
-></video>
+<video src="https://raw.githubusercontent.com/wilkie1990/AgentContinuity/main/apps/video/deliverables/agent-continuity-how-to-1080p.mp4" poster="apps/video/deliverables/agent-continuity-how-to-poster.png" controls width="100%"></video>
 
 Watch the [Agent Continuity walkthrough](apps/video/deliverables/agent-continuity-how-to-1080p.mp4)
 for a guided tour of the project workflow.
