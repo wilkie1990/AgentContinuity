@@ -14,7 +14,11 @@ playwright-report/
 .env.local
 .vite/
 
-# Local-only Remotion/video production workspace and deliverables.
-apps/video/
+# Local-only Remotion/video production workspace. Keep the final README media.
+apps/video/*
+!apps/video/deliverables/
+apps/video/deliverables/*
+!apps/video/deliverables/agent-continuity-how-to-1080p.mp4
+!apps/video/deliverables/agent-continuity-how-to-poster.png
 docs/video/
 scripts/video/
