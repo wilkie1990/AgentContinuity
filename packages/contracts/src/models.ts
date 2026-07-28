@@ -6,6 +6,10 @@ import type {
   TaskStatus,
   WorkPlanStatus,
 } from "./enums.js";
+import type { GitProvenanceSnapshot, GitProvenanceState } from "./provenance.js";
+import type { ExecutionPathOwnership, PathCollisionWarning } from "./ownership.js";
+import type { ContextSize } from "./context.js";
+import type { CriterionEvidence, CriterionEvidencePolicy } from "./evidence.js";
 
 export type Project = {
   id: string;
@@ -14,6 +18,8 @@ export type Project = {
   objective: string | null;
   description: string | null;
   context: string | null;
+  contextVersion: number;
+  contextSize: ContextSize;
   status: ProjectStatus;
   createdAt: string;
   updatedAt: string;
@@ -60,6 +66,8 @@ export type Task = {
   title: string;
   description: string | null;
   context: string | null;
+  contextVersion: number;
+  contextSize: ContextSize;
   status: TaskStatus;
   priority: TaskPriority;
   sortOrder: number;
@@ -135,6 +143,8 @@ export type DeletedProject = {
     decisions: number;
     links: number;
     activityEvents: number;
+    repositories: number;
+    executionWorktrees: number;
   };
 };
 
@@ -147,19 +157,134 @@ export type AcceptanceCriterion = {
   createdAt: string;
   completedAt: string | null;
   evidence?: CriterionEvidence[];
+  evidencePolicy?: CriterionEvidencePolicy | null;
 };
 
 export type TaskExecution = {
   id: string; taskId: string; actor: string; sessionId: string | null; status: "running" | "ended";
   currentPhase: string | null; startedAt: string; resumedAt: string | null; lastHeartbeatAt: string;
   endedAt: string | null; terminationReason: string | null; health: ExecutionHealth; origins: ExecutionOrigin[];
+  /** Redacted binding summary; use an explicit worktree operation to read the local path. */
+  worktree: ExecutionWorktreeSummary | null;
 };
 export type ExecutionOrigin = { id: string; provider: string; reference: string; url: string | null; metadata: Record<string, unknown> | null; createdAt: string };
+
+export type LocalPathAvailability = {
+  status: "available" | "missing" | "inaccessible" | "not_directory";
+  message: string | null;
+};
+
+export type ProjectRepository = {
+  id: string;
+  key: string;
+  projectId: string;
+  projectKey: string;
+  label: string;
+  /** Canonical, machine-local path. Returned only by explicit repository operations. */
+  rootPath: string;
+  remoteUrl: string | null;
+  primary: boolean;
+  availability: LocalPathAvailability;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExecutionWorktreeSummary = {
+  id: string;
+  executionId: string;
+  taskId: string;
+  repositoryId: string;
+  repositoryKey: string;
+  repositoryLabel: string;
+  branch: string | null;
+  availability: LocalPathAvailability;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ExecutionWorktree = ExecutionWorktreeSummary & {
+  /** Canonical, machine-local path. Returned only by explicit worktree operations. */
+  worktreePath: string;
+  /** "." or a repository-relative path when the worktree is inside the repository root. */
+  relativePath: string | null;
+};
+
+export type RemovedProjectRepository = {
+  id: string;
+  key: string;
+  projectKey: string;
+  label: string;
+  removedWorktreeBindings: number;
+};
 export type TaskCheckpoint = { id: string; taskId: string; executionId: string | null; completed: string; workingOn: string; next: string; uncertainty: string | null; actor: string | null; sessionId: string | null; createdAt: string };
 export type WorkPlanItem = { id: string; taskId: string; title: string; status: WorkPlanStatus; sortOrder: number; createdAt: string; updatedAt: string; completedAt: string | null };
 export type TaskHandoff = { id: string; taskId: string; executionId: string | null; reason: string; summary: string; nextAction: string | null; unresolved: string[]; createdAt: string };
-export type CriterionEvidence = { id: string; criterionId: string; type: string; reference: string | null; content: string | null; url: string | null; actor: string | null; sessionId: string | null; createdAt: string };
-export type NeedsAttentionItem = { taskId: string; taskKey: string; projectId: string; reason: "expired_claim" | "stale_execution" | "interrupted_execution" | "blocked" | "review" | "handoff"; requiredAction: string; execution: TaskExecution | null };
+export type NeedsAttentionItem = {
+  taskId: string;
+  taskKey: string;
+  projectId: string;
+  reason:
+    | "expired_claim"
+    | "stale_execution"
+    | "interrupted_execution"
+    | "blocked"
+    | "review"
+    | "handoff"
+    | "path_collision";
+  requiredAction: string;
+  execution: TaskExecution | null;
+  collision?: PathCollisionWarning;
+};
+
+export type TaskExecutionState = {
+  execution: TaskExecution | null;
+  checkpoints: TaskCheckpoint[];
+  workPlan: WorkPlanItem[];
+  handoff: TaskHandoff | null;
+  /** Derived local Git facts for the active, or most recent, execution. */
+  provenance: GitProvenanceState | null;
+  ownership: ExecutionPathOwnership | null;
+  collisions: PathCollisionWarning[];
+};
+
+export type SessionHandoffTask = {
+  taskKey: string;
+  actor: string;
+  executionId: string;
+  checkpointState: "missing" | "stale" | "current";
+};
+
+/**
+ * Read-only lifecycle status for live claims owned by one exact provider session.
+ * It intentionally contains no project, task-context, blocker, or user-authored text.
+ */
+export type SessionHandoffStatus = {
+  sessionId: string;
+  tasks: SessionHandoffTask[];
+};
+
+export type StartWorkResult = {
+  project: ProjectDetail;
+  task: TaskDetail;
+  execution: TaskExecutionState;
+};
+
+export type ReportWorkResult = {
+  claim: TaskClaim;
+  execution: TaskExecution;
+  progress: ProgressEntry | null;
+  checkpoint: TaskCheckpoint | null;
+  provenance: GitProvenanceSnapshot | null;
+  collisions: PathCollisionWarning[];
+};
+
+export type HandoffWorkResult = {
+  checkpoint: TaskCheckpoint;
+  releasedClaim: TaskClaim;
+  handoff: TaskHandoff;
+  task: TaskDetail;
+  provenance: GitProvenanceSnapshot | null;
+};
 
 export type TaskClaim = {
   id: string;

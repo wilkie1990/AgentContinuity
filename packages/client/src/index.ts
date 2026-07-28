@@ -5,13 +5,17 @@ import {
   type AddBlockerInput,
   type AddLinksInput,
   type AddProgressInput,
+  type BindExecutionWorktreeInput,
   type Blocker,
   type BootstrapProjectRequest,
   type BootstrapResult,
   type ClaimTaskInput,
   type CompleteTaskInput,
+  type ContextVersionDetail,
+  type ContextVersionPage,
   type CreateDecisionInput,
   type CreateProjectInput,
+  type CreateRepositoryInput,
   type CreateTaskInput,
   type Decision,
   type DeletedProject,
@@ -20,6 +24,7 @@ import {
   type HealthResponse,
   type Link,
   type ListActivityQuery,
+  type ListContextVersionsQuery,
   type ListDecisionsQuery,
   type ListLinksQuery,
   type ListProjectsQuery,
@@ -27,29 +32,54 @@ import {
   type ProgressEntry,
   type ProjectDetail,
   type ProjectListPage,
+  type ProjectRepository,
   type ProjectSummary,
+  type SearchQuery,
+  type SearchResponse,
+  type SessionHandoffStatus,
   type ReleaseClaimInput,
+  type RemovedProjectRepository,
+  type RevertContextInput,
+  type RemoveRepositoryInput,
   type RenewClaimInput,
   type TaskClaim,
   type TaskCheckpoint,
   type TaskExecution,
-  type TaskHandoff,
+  type TaskExecutionState,
   type WorkPlanItem,
   type CriterionEvidence,
   type ExecutionOrigin,
+  type ExecutionWorktree,
+  type GitProvenanceSnapshot,
+  type GitProvenanceState,
   type NeedsAttentionItem,
+  type ExecutionPathOwnership,
+  type PathCollisionWarning,
+  type ReplaceExecutionPathOwnershipInput,
+  type ReplaceExecutionPathOwnershipResult,
   type HeartbeatInput,
+  type HandoffWorkInput,
+  type HandoffWorkResult,
+  type ReportWorkInput,
+  type ReportWorkResult,
+  type StartWorkInput,
+  type StartWorkResult,
   type CheckpointInput,
   type WorkPlanInput,
   type UpdateWorkPlanItemInput,
   type CriterionEvidenceInput,
+  type CriterionEvidencePolicy,
+  type CriterionEvidencePolicyInput,
+  type ClearCriterionEvidencePolicyInput,
   type ExecutionOriginInput,
   type TaskDetail,
   type TaskSummary,
   type UpdateProjectContextInput,
   type UpdateProjectInput,
+  type UpdateRepositoryInput,
   type UpdateTaskContextInput,
   type UpdateTaskInput,
+  type UnbindExecutionWorktreeInput,
 } from "@agent-continuity/contracts";
 
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
@@ -89,12 +119,7 @@ function isErrorBody(value: unknown): value is ErrorBody {
 export type AgentContinuityClient = ReturnType<typeof createAgentContinuityClient>;
 
 /** Continuity state returned alongside the active (or most recent) execution. */
-export type TaskExecutionState = {
-  execution: TaskExecution | null;
-  checkpoints: TaskCheckpoint[];
-  workPlan: WorkPlanItem[];
-  handoff: TaskHandoff | null;
-};
+export type { TaskExecutionState } from "@agent-continuity/contracts";
 
 /**
  * Typed HTTP client shared by the CLI and the web application, so both exercise the
@@ -159,6 +184,16 @@ export function createAgentContinuityClient(options: ClientOptions) {
       return request<HealthResponse>("GET", "/health");
     },
 
+    search(query: SearchQuery): Promise<SearchResponse> {
+      return request<SearchResponse>("GET", api("/search"), undefined, {
+        q: query.q,
+        project: query.project,
+        task: query.task,
+        type: query.type,
+        limit: query.limit,
+      });
+    },
+
     projects: {
       async create(input: CreateProjectInput): Promise<ProjectSummary> {
         return (await request<{ project: ProjectSummary }>("POST", api("/projects"), input)).project;
@@ -196,6 +231,43 @@ export function createAgentContinuityClient(options: ClientOptions) {
           )
         ).project;
       },
+      listContextVersions(
+        project: string,
+        query: Partial<ListContextVersionsQuery> = {},
+      ): Promise<ContextVersionPage> {
+        return request<ContextVersionPage>(
+          "GET",
+          api(`/projects/${project}/context/versions`),
+          undefined,
+          {
+            limit: query.limit,
+            beforeVersion: query.beforeVersion,
+          },
+        );
+      },
+      async getContextVersion(
+        project: string,
+        version: number,
+      ): Promise<ContextVersionDetail> {
+        return (
+          await request<{ version: ContextVersionDetail }>(
+            "GET",
+            api(`/projects/${project}/context/versions/${version}`),
+          )
+        ).version;
+      },
+      async revertContext(
+        project: string,
+        input: RevertContextInput,
+      ): Promise<ProjectSummary> {
+        return (
+          await request<{ project: ProjectSummary }>(
+            "POST",
+            api(`/projects/${project}/context/revert`),
+            input,
+          )
+        ).project;
+      },
       async archive(project: string, actor?: string): Promise<ProjectSummary> {
         return (
           await request<{ project: ProjectSummary }>("POST", api(`/projects/${project}/archive`), {
@@ -210,6 +282,63 @@ export function createAgentContinuityClient(options: ClientOptions) {
         return (
           await request<{ deleted: DeletedProject }>("DELETE", api(`/projects/${project}`), input)
         ).deleted;
+      },
+    },
+
+    repositories: {
+      async create(
+        project: string,
+        input: CreateRepositoryInput,
+      ): Promise<ProjectRepository> {
+        return (
+          await request<{ repository: ProjectRepository }>(
+            "POST",
+            api(`/projects/${project}/repositories`),
+            input,
+          )
+        ).repository;
+      },
+      async list(project: string): Promise<ProjectRepository[]> {
+        return (
+          await request<{ repositories: ProjectRepository[] }>(
+            "GET",
+            api(`/projects/${project}/repositories`),
+          )
+        ).repositories;
+      },
+      async get(project: string, repository: string): Promise<ProjectRepository> {
+        return (
+          await request<{ repository: ProjectRepository }>(
+            "GET",
+            api(`/projects/${project}/repositories/${repository}`),
+          )
+        ).repository;
+      },
+      async update(
+        project: string,
+        repository: string,
+        input: UpdateRepositoryInput,
+      ): Promise<ProjectRepository> {
+        return (
+          await request<{ repository: ProjectRepository }>(
+            "PATCH",
+            api(`/projects/${project}/repositories/${repository}`),
+            input,
+          )
+        ).repository;
+      },
+      async remove(
+        project: string,
+        repository: string,
+        input: RemoveRepositoryInput = { force: false },
+      ): Promise<RemovedProjectRepository> {
+        return (
+          await request<{ removed: RemovedProjectRepository }>(
+            "DELETE",
+            api(`/projects/${project}/repositories/${repository}`),
+            input,
+          )
+        ).removed;
       },
     },
 
@@ -248,6 +377,37 @@ export function createAgentContinuityClient(options: ClientOptions) {
           await request<{ task: TaskSummary }>("PUT", api(`/tasks/${task}/context`), input)
         ).task;
       },
+      listContextVersions(
+        task: string,
+        query: Partial<ListContextVersionsQuery> = {},
+      ): Promise<ContextVersionPage> {
+        return request<ContextVersionPage>(
+          "GET",
+          api(`/tasks/${task}/context/versions`),
+          undefined,
+          {
+            limit: query.limit,
+            beforeVersion: query.beforeVersion,
+          },
+        );
+      },
+      async getContextVersion(task: string, version: number): Promise<ContextVersionDetail> {
+        return (
+          await request<{ version: ContextVersionDetail }>(
+            "GET",
+            api(`/tasks/${task}/context/versions/${version}`),
+          )
+        ).version;
+      },
+      async revertContext(task: string, input: RevertContextInput): Promise<TaskSummary> {
+        return (
+          await request<{ task: TaskSummary }>(
+            "POST",
+            api(`/tasks/${task}/context/revert`),
+            input,
+          )
+        ).task;
+      },
       async complete(task: string, input: Partial<CompleteTaskInput> = {}): Promise<TaskSummary> {
         return (
           await request<{ task: TaskSummary }>("POST", api(`/tasks/${task}/complete`), input)
@@ -259,6 +419,15 @@ export function createAgentContinuityClient(options: ClientOptions) {
       },
       claim(task: string, input: ClaimTaskInput): Promise<{ claim: TaskClaim; task: TaskSummary }> {
         return request("POST", api(`/tasks/${task}/claim`), input);
+      },
+      startWork(task: string, input: StartWorkInput): Promise<StartWorkResult> {
+        return request("POST", api(`/tasks/${task}/start-work`), input);
+      },
+      report(task: string, input: ReportWorkInput): Promise<ReportWorkResult> {
+        return request("POST", api(`/tasks/${task}/report`), input);
+      },
+      handoff(task: string, input: HandoffWorkInput): Promise<HandoffWorkResult> {
+        return request("POST", api(`/tasks/${task}/handoff`), input);
       },
       async renewClaim(task: string, input: RenewClaimInput): Promise<TaskClaim> {
         return (
@@ -277,6 +446,71 @@ export function createAgentContinuityClient(options: ClientOptions) {
       },
       execution(task: string): Promise<TaskExecutionState> {
         return request<TaskExecutionState>("GET", api(`/tasks/${task}/execution`));
+      },
+      pathOwnership(
+        task: string,
+      ): Promise<{
+        ownership: ExecutionPathOwnership | null;
+        collisions: PathCollisionWarning[];
+      }> {
+        return request("GET", api(`/tasks/${task}/execution/path-ownership`));
+      },
+      replacePathOwnership(
+        task: string,
+        input: ReplaceExecutionPathOwnershipInput,
+      ): Promise<ReplaceExecutionPathOwnershipResult> {
+        return request("PUT", api(`/tasks/${task}/execution/path-ownership`), input);
+      },
+      async executionWorktree(task: string): Promise<ExecutionWorktree> {
+        return (
+          await request<{ worktree: ExecutionWorktree }>(
+            "GET",
+            api(`/tasks/${task}/execution/worktree`),
+          )
+        ).worktree;
+      },
+      async bindWorktree(
+        task: string,
+        input: BindExecutionWorktreeInput,
+      ): Promise<ExecutionWorktree> {
+        return (
+          await request<{ worktree: ExecutionWorktree }>(
+            "PUT",
+            api(`/tasks/${task}/execution/worktree`),
+            input,
+          )
+        ).worktree;
+      },
+      async unbindWorktree(
+        task: string,
+        input: UnbindExecutionWorktreeInput,
+      ): Promise<ExecutionWorktree> {
+        return (
+          await request<{ worktree: ExecutionWorktree }>(
+            "DELETE",
+            api(`/tasks/${task}/execution/worktree`),
+            input,
+          )
+        ).worktree;
+      },
+      async gitProvenance(task: string): Promise<GitProvenanceState | null> {
+        return (
+          await request<{ provenance: GitProvenanceState | null }>(
+            "GET",
+            api(`/tasks/${task}/execution/git-provenance`),
+          )
+        ).provenance;
+      },
+      async captureGitProvenance(
+        task: string,
+      ): Promise<GitProvenanceSnapshot | null> {
+        return (
+          await request<{ provenance: GitProvenanceSnapshot | null }>(
+            "POST",
+            api(`/tasks/${task}/execution/git-provenance/capture`),
+            {},
+          )
+        ).provenance;
       },
       async checkpoint(task: string, input: CheckpointInput): Promise<TaskCheckpoint> {
         return (await request<{ checkpoint: TaskCheckpoint }>("POST", api(`/tasks/${task}/checkpoints`), input)).checkpoint;
@@ -298,6 +532,43 @@ export function createAgentContinuityClient(options: ClientOptions) {
       },
       async criterionEvidence(task: string, criterion: string): Promise<CriterionEvidence[]> {
         return (await request<{ evidence: CriterionEvidence[] }>("GET", api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence`))).evidence;
+      },
+      async criterionEvidencePolicy(
+        task: string,
+        criterion: string,
+      ): Promise<CriterionEvidencePolicy | null> {
+        return (
+          await request<{ policy: CriterionEvidencePolicy | null }>(
+            "GET",
+            api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence-policy`),
+          )
+        ).policy;
+      },
+      async setCriterionEvidencePolicy(
+        task: string,
+        criterion: string,
+        input: CriterionEvidencePolicyInput,
+      ): Promise<CriterionEvidencePolicy> {
+        return (
+          await request<{ policy: CriterionEvidencePolicy }>(
+            "PUT",
+            api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence-policy`),
+            input,
+          )
+        ).policy;
+      },
+      async clearCriterionEvidencePolicy(
+        task: string,
+        criterion: string,
+        input: ClearCriterionEvidencePolicyInput = {},
+      ): Promise<null> {
+        return (
+          await request<{ policy: null }>(
+            "DELETE",
+            api(`/tasks/${task}/acceptance-criteria/${criterion}/evidence-policy`),
+            input,
+          )
+        ).policy;
       },
       async addExecutionOrigin(task: string, input: ExecutionOriginInput): Promise<ExecutionOrigin> {
         return (await request<{ origin: ExecutionOrigin }>("POST", api(`/tasks/${task}/execution/origins`), input)).origin;
@@ -438,6 +709,15 @@ export function createAgentContinuityClient(options: ClientOptions) {
     attention: {
       async list(): Promise<NeedsAttentionItem[]> {
         return (await request<{ items: NeedsAttentionItem[] }>("GET", api("/attention"))).items;
+      },
+    },
+
+    sessions: {
+      handoffStatus(sessionId: string): Promise<SessionHandoffStatus> {
+        return request(
+          "GET",
+          api(`/sessions/${encodeURIComponent(sessionId)}/handoff-status`),
+        );
       },
     },
   };

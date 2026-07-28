@@ -1,6 +1,11 @@
 import { ACTIVITY_EVENT_TYPES } from "@agent-continuity/contracts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkspace, seedProject, seedTask, type TestWorkspace } from "./helpers.js";
+
+const temporaryDirectories: string[] = [];
 
 describe("activity", () => {
   let workspace: TestWorkspace;
@@ -13,6 +18,9 @@ describe("activity", () => {
 
   afterEach(() => {
     workspace.close();
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("returns events newest first regardless of shared timestamps", () => {
@@ -104,26 +112,124 @@ describe("activity", () => {
     workspace.tasks.addDependency(task.key, dependency.key, { actor: "codex" });
     workspace.tasks.removeDependency(task.key, dependency.key, { actor: "codex" });
 
-    workspace.projects.updateContext(project.key, { context: "Project memory", actor: "codex" });
+    workspace.projects.updateContext(project.key, {
+      context: "Project memory",
+      expectedVersion: 0,
+      actor: "codex",
+    });
     workspace.projects.update(project.key, { objective: "Updated objective", actor: "codex" });
+    const repositoryRoot = mkdtempSync(join(tmpdir(), "agent-continuity-activity-repository-"));
+    temporaryDirectories.push(repositoryRoot);
+    const repository = workspace.repositories.create(project.key, {
+      label: "Main",
+      rootPath: repositoryRoot,
+      actor: "codex",
+    });
+    workspace.repositories.update(project.key, repository.key, {
+      label: "Main repository",
+      actor: "codex",
+    });
 
     workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
+    const binding = workspace.repositories.bindWorktree(task.key, {
+      repository: repository.key,
+      worktreePath: repositoryRoot,
+      actor: "codex",
+      sessionId: "abc",
+    });
+    const executionId = workspace.executions.activeFor(task.id)!.id;
+    const baseline = workspace.provenance.recordBaseline(task.key, {
+      executionId,
+      worktreeId: binding.id,
+      repositoryId: repository.id,
+      source: "local_git",
+      inspection: {
+        status: "ok",
+        branch: "main",
+        detached: false,
+        headSha: "1111111111111111111111111111111111111111",
+        dirty: false,
+        error: null,
+      },
+    });
+    workspace.provenance.recordSnapshot(task.key, {
+      executionId,
+      worktreeId: binding.id,
+      repositoryId: repository.id,
+      baselineId: baseline.id,
+      trigger: "manual",
+      source: "local_git",
+      inspection: {
+        status: "ok",
+        branch: "main",
+        detached: false,
+        headSha: "2222222222222222222222222222222222222222",
+        dirty: true,
+        error: null,
+        commitShas: ["2222222222222222222222222222222222222222"],
+        additions: 1,
+        deletions: 0,
+        filesChanged: 1,
+        touchedPaths: [
+          {
+            path: "src/example.ts",
+            previousPath: null,
+            change: "modified",
+            additions: 1,
+            deletions: 0,
+          },
+        ],
+      },
+    });
+    workspace.ownership.replace(task.key, {
+      paths: [{ path: "src/example.ts", kind: "file" }],
+      actor: "codex",
+      sessionId: "abc",
+    });
+    workspace.repositories.unbindWorktree(task.key, {
+      actor: "codex",
+      sessionId: "abc",
+    });
+    workspace.repositories.remove(project.key, repository.key, {
+      force: false,
+      actor: "codex",
+    });
     workspace.claims.renew(task.key, { actor: "codex", sessionId: "abc" });
     workspace.claims.claim(task.key, { actor: "codex", sessionId: "abc" });
     workspace.claims.heartbeat(task.key, { actor: "codex", sessionId: "abc", phase: "Designing" });
     workspace.executions.checkpoint(task.key, { completed: "Modelled the domain", workingOn: "Service layer", next: "Add routes", actor: "codex", sessionId: "abc" });
     const [plan] = workspace.executions.setWorkPlan(task.key, { items: ["Design", "Implement"], actor: "codex" });
     workspace.executions.updateWorkPlanItem(task.key, plan!.id, { status: "completed", actor: "codex" });
-    workspace.tasks.updateContext(task.key, { context: "Task memory", actor: "codex" });
+    workspace.tasks.updateContext(task.key, {
+      context: "Task memory",
+      expectedVersion: 0,
+      actor: "codex",
+    });
     workspace.tasks.update(task.key, { title: "Main task", actor: "codex" });
     workspace.tasks.addProgress(task.key, { content: "Data model implemented.", actor: "codex" });
 
     const criteria = workspace.tasks.addAcceptanceCriteria(task.key, ["Outcome is checkable"], {
       actor: "codex",
     });
-    workspace.executions.addEvidence(task.key, criteria[0]!.id, { type: "test", reference: "activity.test.ts", actor: "codex" });
+    workspace.executions.addEvidence(task.key, criteria[0]!.id, { kind: "test", name: "activity suite", outcome: "passed", reference: "activity.test.ts", actor: "codex" });
+    workspace.evidence.setPolicy(task.key, criteria[0]!.id, {
+      minimumCount: 1,
+      qualifyingKinds: ["test"],
+      requireSha: false,
+      requirePassingVerification: false,
+      actor: "codex",
+    });
+    workspace.evidence.clearPolicy(task.key, criteria[0]!.id, { actor: "codex" });
     workspace.tasks.completeAcceptanceCriterion(task.key, criteria[0]!.id, { actor: "codex" });
     workspace.tasks.reopenAcceptanceCriterion(task.key, criteria[0]!.id, { actor: "codex" });
+    const [discardedCriterion] = workspace.tasks.addAcceptanceCriteria(
+      task.key,
+      ["Discarded outcome"],
+      { actor: "codex" },
+    );
+    workspace.tasks.deleteAcceptanceCriterion(task.key, discardedCriterion!.id, {
+      actor: "codex",
+    });
 
     const blocker = workspace.blockers.add(task.key, { description: "Needs input", actor: "codex" });
     workspace.blockers.resolve(blocker.key, { resolution: "Answered", actor: "adam" });

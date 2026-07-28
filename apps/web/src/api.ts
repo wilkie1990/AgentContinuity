@@ -1,5 +1,6 @@
 import { createAgentContinuityClient } from "@agent-continuity/client";
 import type {
+  ContextOwnerType,
   ListActivityQuery,
   ListTasksQuery,
   ProjectStatus,
@@ -36,6 +37,10 @@ export const keys = {
   workPlan: (ref: string) => ["work-plan", ref] as const,
   execution: (ref: string) => ["execution", ref] as const,
   attention: () => ["attention"] as const,
+  contextHistory: (ownerType: ContextOwnerType, ref: string) =>
+    ["context-history", ownerType, ref] as const,
+  contextVersion: (ownerType: ContextOwnerType, ref: string, version: number) =>
+    ["context-version", ownerType, ref, version] as const,
 };
 
 /** Any mutation can touch derived project counters, so refresh the project scope broadly. */
@@ -50,6 +55,8 @@ function invalidateProject(queryClient: QueryClient, ref: string | undefined): v
   void queryClient.invalidateQueries({ queryKey: ["work-plan"] });
   void queryClient.invalidateQueries({ queryKey: ["execution"] });
   void queryClient.invalidateQueries({ queryKey: ["attention"] });
+  void queryClient.invalidateQueries({ queryKey: ["context-history"] });
+  void queryClient.invalidateQueries({ queryKey: ["context-version"] });
   if (ref) void queryClient.invalidateQueries({ queryKey: keys.project(ref) });
   void queryClient.invalidateQueries({ queryKey: ["project"] });
 }
@@ -86,6 +93,35 @@ export function useTask(ref: string | null | undefined) {
     queryFn: () => client.tasks.get(ref as string),
     enabled: Boolean(ref),
     refetchInterval: LIVE_POLL_MS,
+  });
+}
+
+export function useContextHistory(
+  ownerType: ContextOwnerType,
+  ref: string | null | undefined,
+) {
+  return useQuery({
+    queryKey: keys.contextHistory(ownerType, ref ?? ""),
+    queryFn: () =>
+      ownerType === "project"
+        ? client.projects.listContextVersions(ref as string, { limit: 20 })
+        : client.tasks.listContextVersions(ref as string, { limit: 20 }),
+    enabled: Boolean(ref),
+  });
+}
+
+export function useContextVersion(
+  ownerType: ContextOwnerType,
+  ref: string | null | undefined,
+  version: number | null,
+) {
+  return useQuery({
+    queryKey: keys.contextVersion(ownerType, ref ?? "", version ?? 0),
+    queryFn: () =>
+      ownerType === "project"
+        ? client.projects.getContextVersion(ref as string, version as number)
+        : client.tasks.getContextVersion(ref as string, version as number),
+    enabled: Boolean(ref) && version !== null,
   });
 }
 

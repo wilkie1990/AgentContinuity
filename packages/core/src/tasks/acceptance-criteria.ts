@@ -156,8 +156,10 @@ export function reopenCriterion(
 
 export function deleteCriterion(
   runtime: Runtime,
+  activity: ActivityService,
   task: TaskRow,
   ref: string,
+  meta: Meta = {},
 ): void {
   runtime.tx(() => {
     const criterion = requireCriterion(runtime, task.id, ref);
@@ -169,5 +171,13 @@ export function deleteCriterion(
       );
     }
     runtime.db.delete(acceptanceCriteria).where(eq(acceptanceCriteria.id, criterion.id)).run();
+    activity.record({
+      projectId: task.projectId,
+      taskId: task.id,
+      eventType: "acceptance_criterion.deleted",
+      actor: meta.actor,
+      sessionId: meta.sessionId,
+      payload: { criterionId: criterion.id, description: criterion.description },
+    });
   });
 }

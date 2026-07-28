@@ -17,10 +17,6 @@
     "clean": "tsc -b --clean"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.1",
-    "drizzle-orm": "^0.45.2"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13"
+    "drizzle-orm": "1.0.0-rc.4"
   }
 }

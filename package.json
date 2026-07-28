@@ -6,7 +6,7 @@
   "description": "Agent Continuity — Persistent project execution across agents and sessions.",
   "packageManager": "pnpm@10.34.5",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json && pnpm --filter @agent-continuity/web build",
@@ -20,6 +20,7 @@
     "dev:web": "pnpm --filter @agent-continuity/web dev",
     "server": "node apps/server/dist/bin.js",
     "mcp": "node apps/mcp/dist/bin.js",
+    "measure:mcp": "pnpm --filter @agent-continuity/mcp measure",
     "ac": "node apps/cli/dist/bin.js",
     "seed": "tsx scripts/seed.ts"
   },

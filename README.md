@@ -9,6 +9,20 @@ context, tasks, acceptance criteria, dependencies, temporary claims, progress, b
 decisions, links and activity — so one AI agent can begin work and another can continue it
 later without the user reconstructing anything by hand.
 
+## Requirements and verification
+
+Agent Continuity supports Node.js 24 or newer and the pnpm version pinned in
+`package.json`. Enable Corepack before installing dependencies:
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+```
+
+The pull-request and `main` CI workflow runs `pnpm typecheck`, `pnpm test`,
+`pnpm build`, and the Playwright end-to-end suite on Node 24. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for local validation expectations.
+
 It replaces the `progress.md` / `TODO.md` pattern with something an agent can query,
 mutate and hand over reliably.
 
@@ -25,7 +39,7 @@ for a guided tour of the project workflow.
 
 | Surface | Purpose |
 | --- | --- |
-| **MCP server** | The primary agent interface: 35 tools over stdio |
+| **MCP server** | The primary agent interface: 61 typed tools over stdio; the optional 47-tool agent profile trims schema context while preserving complete non-destructive agent work |
 | **REST API** | `http://127.0.0.1:4732/api/v1`, the single public contract |
 | **CLI** (`ac`) | Terminal access for humans and for agents without MCP (`--json`) |
 | **Web UI** | Kanban board, task drawer, context editor, decisions, links, activity |
@@ -49,30 +63,84 @@ pnpm seed
 
 Open <http://127.0.0.1:4732> for the board.
 
-### Connect an agent over MCP
+### Run locally with Docker
 
-```json
-{
-  "mcpServers": {
-    "agent-continuity": {
-      "command": "node",
-      "args": ["/absolute/path/to/AgentContinuity/apps/mcp/dist/bin.js"]
-    }
-  }
-}
+Docker is supported for local use only; this project does not publish a container image.
+Build and start the combined API and web UI with:
+
+```bash
+docker compose up --build -d
+docker compose ps
+curl --fail http://127.0.0.1:4732/health
 ```
 
-Then copy `skills/agent-continuity` and `skills/project-bootstrap` into your agent's skills
-directory (for Claude Code, `~/.claude/skills/`).
+The `agent-continuity-data` named volume is mounted at `/data`, so the SQLite workspace
+survives `docker compose down` followed by `docker compose up`. Use
+`docker compose down -v` only when you intentionally want to delete that local state.
+The service is published to `127.0.0.1` only because it has no authentication. Do not
+change the Compose port binding to `0.0.0.0` or expose it through a reverse proxy without
+putting an appropriate trusted access boundary in front of it.
 
-For Codex, this repository already includes the required project-scoped setup:
+To use a different loopback port, set it consistently for Compose:
 
-- `.codex/config.toml` registers the `agent-continuity` MCP server from
-  `apps/mcp/dist/bin.js`.
-- `.agents/skills/` exposes the `agent-continuity` and `project-bootstrap` skills.
+```bash
+AGENT_CONTINUITY_PORT=4740 docker compose up --build -d
+curl --fail http://127.0.0.1:4740/health
+```
 
-After rebuilding the repository, restart Codex (or restart the IDE extension) so the
-renamed MCP process and skill catalog are reloaded. No separate MCP installation is required.
+The Compose configuration sets `AGENT_CONTINUITY_HOST`, `AGENT_CONTINUITY_PORT`,
+`AGENT_CONTINUITY_DATA_DIR`, `AGENT_CONTINUITY_DATABASE_PATH`,
+`AGENT_CONTINUITY_LOG_LEVEL`, and `AGENT_CONTINUITY_CLAIM_TTL_MINUTES`; see
+[Configuration](#configuration) for their meaning.
+
+### Connect an agent over MCP
+
+After `pnpm build`, use the local CLI to configure one of the documented clients:
+
+```bash
+node apps/cli/dist/bin.js install --client codex --dry-run
+node apps/cli/dist/bin.js install --client codex
+
+# Or configure Claude Code for this checkout:
+node apps/cli/dist/bin.js install --client claude-code
+
+# Explicitly opt in to lightweight lifecycle reminders:
+node apps/cli/dist/bin.js install --client codex --session-integration enable
+node apps/cli/dist/bin.js install --client claude-code --session-integration enable
+```
+
+The Codex adapter updates only `[mcp_servers.agent-continuity]` in
+`.codex/config.toml` and links the two project skills into `.agents/skills/`. The Claude
+Code adapter merges only `mcpServers.agent-continuity` in `.mcp.json` and links the
+skills into `.claude/skills/`. Both use absolute paths to the current Node executable and
+built MCP entry point.
+
+The formats follow the current official [Codex MCP configuration](https://developers.openai.com/codex/mcp/)
+and [Claude Code MCP configuration](https://docs.anthropic.com/en/docs/claude-code/mcp)
+documentation. Existing unrelated configuration is preserved. A changed existing Agent
+Continuity entry requires `--force`, existing config is copied to an adjacent
+`.agent-continuity.bak` before mutation, and `--copy` installs skills as directories when
+links are unsuitable. Repeated runs are idempotent. The Codex adapter preserves the file
+as text and refuses unfamiliar multiline TOML when it cannot safely append the MCP table;
+it reports the config path and leaves the file unchanged.
+
+Session integration is opt-in and defaults to `--session-integration skip`. Enabling it
+adds marker-owned `SessionStart` and `Stop` command hooks to `.codex/hooks.json` for
+Codex or `.claude/settings.json` for Claude Code. Startup supplies only the provider's
+opaque session identity; it does not query or inject Needs Attention, projects, tasks,
+blockers, or user-authored text. Stop makes one exact-session read and requests one
+continuation only when that session owns a live claim with a missing or stale checkpoint;
+it never creates progress or heartbeat activity. Needs Attention is queried on demand
+only when a conversation is actually managing tracked work. The probe has a 1.5-second
+request timeout and fails open without output when Agent Continuity is unavailable. Run
+the installer with `--session-integration remove` to remove only Agent Continuity's
+lifecycle handlers.
+Codex requires review of new or changed project hooks through `/hooks` before they run.
+See [Session integrations](docs/session-integrations.md) for provider behavior and
+limitations.
+
+Restart the client after installation so it reloads its MCP and skill configuration. This
+workflow operates from a local clone; it does not install or publish an npm package.
 
 ### Use the CLI
 
@@ -88,6 +156,17 @@ ac task plan TASK-0001 "Inspect" "Implement" "Verify"
 ac task heartbeat TASK-0001 --phase "Implement"
 ac task checkpoint TASK-0001 --completed "Inspection" --working-on "Implementation" --next "Verify"
 ac task progress TASK-0001 "Initial lease data model designed."
+ac task context TASK-0001 --set "Durable implementation constraints" --expected-version 0 \
+  --reason "Capture the agreed approach"
+ac task context TASK-0001 --history
+ac task evidence TASK-0001 "Defines expiry behaviour" \
+  --kind file --path packages/core/src/claims/service.ts
+ac task evidence-policy TASK-0001 "Defines expiry behaviour" \
+  --minimum-count 1 --kind test --require-sha --require-passing-verification
+ac task verify TASK-0001 "Defines expiry behaviour" pnpm \
+  --arg vitest --arg run --arg packages/core/src/__tests__/claims.test.ts \
+  --timeout-ms 120000
+ac search "lease expiry" --project PRJ-0001 --type task --type task_context
 ac attention
 ac task complete TASK-0001
 ac activity PRJ-0001
@@ -95,11 +174,23 @@ ac activity PRJ-0001
 
 Every read command supports `--json`.
 
+`ac task verify` is the only command-execution surface. It requires the task's explicit
+stored execution worktree, never falls back to the CLI process cwd, accepts an executable
+and repeated `--arg` values (not a shell string), and persists bounded stdout/stderr tails
+plus exit/timing/Git facts as `test` evidence. Output is not automatically redacted: a
+verification command can print secrets, so choose commands accordingly. The default tail
+is 64 KiB per stream (maximum 1 MiB) and the default timeout is 60 seconds (maximum 15
+minutes). Timeout termination covers the process group on POSIX; Windows direct-child
+termination is best-effort. A passing record does not mark the criterion complete.
+
 ## The model in one minute
 
 - A **project** holds an objective and **project context**: persistent working memory that
   applies anywhere in the project.
 - A **task** holds **task context**: what a future agent needs specifically to finish it.
+- Context stays free-form Markdown, but every replacement is an immutable version. Saves
+  carry the version they were based on, stale writes conflict instead of overwriting newer
+  knowledge, and revert appends another version without deleting history.
 - A task is **actionable** when it is `ready`, all dependencies are `done`, and it has no
   active blockers.
 - A **claim** is a temporary lease (30 minutes by default), not an assignment. It expires,
@@ -188,6 +279,7 @@ command-line flag alone cannot do.
 - [`docs/api.md`](docs/api.md) — the REST surface and error model
 - [`docs/mcp.md`](docs/mcp.md) — the MCP tool surface
 - [`docs/development.md`](docs/development.md) — repository layout, testing, conventions
+- [`AGENTS.md`](AGENTS.md) — repository guidance for coding agents
 
 ## Scope of v0.1
 
@@ -204,3 +296,8 @@ Agent Continuity is not a Trello replacement, not a Jira replacement and not an 
 database. It is a persistent execution workspace for work performed through AI agents. The
 board visualises work for humans; the API and MCP tools expose work to agents; Skills teach
 agents how to behave. The project state survives them all.
+
+## License
+
+Copyright 2026 Adam Wilkinson. Agent Continuity is licensed under the
+[Apache License 2.0](LICENSE).

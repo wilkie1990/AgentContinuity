@@ -1,5 +1,6 @@
 import type { Workspace } from "@agent-continuity/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpProfile } from "./profile.js";
 import { registerTools } from "./tools.js";
 
 export const MCP_SERVER_NAME = "agent-continuity";
@@ -15,12 +16,12 @@ Keep durable knowledge in project and task context, not in progress entries.
 Before ending a session on an incomplete task, record progress, update context, then release the claim.`;
 
 /** Builds the MCP server around an existing workspace; tools call core services directly. */
-export function createMcpServer(workspace: Workspace): McpServer {
+export function createMcpServer(workspace: Workspace, options: { profile?: McpProfile } = {}): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
     { instructions: INSTRUCTIONS },
   );
 
-  registerTools(server, workspace);
+  registerTools(server, workspace, options.profile ?? "full");
   return server;
 }

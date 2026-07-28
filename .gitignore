@@ -14,6 +14,9 @@ playwright-report/
 .env.local
 .vite/
 
+# Temporarily ignore GitHub Actions workflows.
+.github/workflows/
+
 # Local-only Remotion/video production workspace. Keep the final README media.
 apps/video/*
 !apps/video/deliverables/

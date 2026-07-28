@@ -2,10 +2,13 @@
 
 ## Prerequisites
 
-- Node.js 22 or newer (developed on Node 25)
+- Node.js 24 or newer
 - pnpm 10 (`npm i -g pnpm`)
-- Xcode Command Line Tools on macOS, or build-essential on Linux — `better-sqlite3` compiles
-  from source when no prebuilt binary matches your Node version
+
+The database uses Node's built-in synchronous `node:sqlite` module, so dependency
+installation does not compile or download a separate SQLite native addon. Node 24.15 and
+newer reports `node:sqlite` as stability 1.2 (release candidate); earlier Node 24 releases
+support the APIs used here but may print an experimental-feature warning.
 
 ## Commands
 
@@ -22,9 +25,46 @@ pnpm dev              # tsx watch on the API (serves apps/web/dist when built)
 pnpm dev:web          # Vite dev server on :4733, proxying /api to :4732
 ```
 
-`pnpm install` allows `better-sqlite3` and `esbuild` to run their install scripts; pnpm 10
-blocks dependency lifecycle scripts unless they are listed in `onlyBuiltDependencies` in
+`pnpm install` allows `esbuild` to run its install script; pnpm 10 blocks dependency
+lifecycle scripts unless they are listed in `onlyBuiltDependencies` in
 `pnpm-workspace.yaml`.
+
+## Docker (local only)
+
+The repository includes a multi-stage `Dockerfile` for a reproducible local Node 24 build.
+The final image contains the production deployment of the server and its workspace
+dependencies, plus the built web assets; it runs as the unprivileged `agentcontinuity`
+user. No image registry workflow is provided or intended.
+
+```bash
+docker compose up --build -d
+docker compose ps                         # wait for "healthy"
+curl --fail http://127.0.0.1:4732/health
+docker compose logs agent-continuity
+```
+
+Compose stores state in its `agent-continuity-data` named volume at `/data` and configures
+`AGENT_CONTINUITY_DATA_DIR=/data` and
+`AGENT_CONTINUITY_DATABASE_PATH=/data/workspace.db`. To prove persistence, create state,
+run `docker compose up -d --force-recreate`, then verify the state remains. Use
+`docker compose down -v` only to deliberately remove that database.
+
+The container binds `0.0.0.0` internally so Docker can reach it, while Compose publishes
+the selected port as `127.0.0.1:${AGENT_CONTINUITY_PORT:-4732}`. This loopback restriction
+is security-critical: Agent Continuity has no authentication. Do not make it LAN- or
+internet-reachable without an explicit, reviewed access boundary.
+
+Override the local port (both the container setting and loopback mapping) with:
+
+```bash
+AGENT_CONTINUITY_PORT=4740 docker compose up --build -d
+```
+
+The normal base image is Docker Hub's official `node:24-bookworm-slim`. If Docker Hub is
+temporarily unreachable but an approved official Node mirror is available in your local
+environment, its image reference can be supplied only for that local build with
+`AGENT_CONTINUITY_NODE_IMAGE=... docker compose build`; it does not change the default or
+add a registry publication path.
 
 ## Repository layout
 
@@ -64,8 +104,38 @@ Migrations are plain SQL files in `packages/database/migrations`, applied in fil
 by `runMigrations`, each inside its own transaction, tracked in a `_migrations` table with a
 checksum. Editing an already-applied migration is detected and refused.
 
-To change the schema, add `0002_*.sql` and update `packages/database/src/schema.ts` to
+To change the schema, add the next numbered `.sql` file and update
+`packages/database/src/schema.ts` to
 match. The Drizzle schema is used for typed queries; it does not generate the migrations.
+
+## Workspace export and import
+
+`ac workspace export` writes a deterministic, versioned logical JSON snapshot. It does not
+copy the SQLite file, migrations, receipts, search index, or FTS index. By default it emits a
+portable redacted snapshot: machine-local repository/worktree paths and their path-bound Git
+and ownership history are omitted and listed in a redaction manifest. Use
+`--include-local-paths` only for a full-fidelity local backup; importing that file requires
+`--accept-local-paths` as an explicit acknowledgement.
+
+`ac workspace import --file backup.json --confirm` validates the complete document before
+writing. Version 1 restores only an empty workspace, or returns `already_imported` when the
+same digest has a recorded receipt. It never merges, replaces, remaps keys, or overwrites
+live state. Claims and running executions in a source file are retained as history but safely
+interrupted during the first import; a bounded receipt makes replay of that exact source
+idempotent. File output is written through a private temporary file and atomic rename; stdout
+contains only the JSON document.
+
+## Database runtime
+
+`createDatabase()` uses `node:sqlite`'s synchronous `DatabaseSync` through Drizzle's
+official `node-sqlite` adapter. File-backed workspaces use WAL mode; all workspaces enable
+foreign-key enforcement and wait up to five seconds for a busy database before failing.
+In-memory workspaces use SQLite's `memory` journal mode because WAL is not available for
+`:memory:` databases.
+
+Drizzle's official adapter is currently available only on its release-candidate line, so
+both `packages/database` and `packages/core` pin the same exact version. Upgrade them
+together when the adapter reaches a verified stable Drizzle release.
 
 ## Testing
 

@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { actorFields, arrayable, nullableText } from "./common.js";
+import { nullableContextContentSchema, replaceContextSchema } from "./context.js";
 import { projectSortSchema, projectStatusSchema } from "./enums.js";
 
 export const createProjectSchema = z.strictObject({
   name: z.string().min(1).max(200),
   objective: nullableText,
   description: nullableText,
-  context: nullableText,
+  context: nullableContextContentSchema.optional(),
   status: projectStatusSchema.optional(),
   ...actorFields,
 });
@@ -21,10 +22,7 @@ export const updateProjectSchema = z.strictObject({
 });
 export type UpdateProjectInput = z.infer<typeof updateProjectSchema>;
 
-export const updateProjectContextSchema = z.strictObject({
-  context: z.string().max(1_000_000),
-  ...actorFields,
-});
+export const updateProjectContextSchema = replaceContextSchema;
 export type UpdateProjectContextInput = z.infer<typeof updateProjectContextSchema>;
 
 export const archiveProjectSchema = z.strictObject({ ...actorFields });

@@ -177,6 +177,48 @@
   flex: 1;
 }
 
+.context-size {
+  margin: 0;
+}
+
+.context-size--warning {
+  color: var(--warning);
+  background: var(--warning-soft);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.context-history {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.context-history h3,
+.context-history p {
+  margin: 0;
+}
+
+.context-history-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: var(--space-3);
+}
+
+.context-history-row > * + * {
+  margin-top: var(--space-2);
+}
+
+.context-history-content {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: var(--space-3);
+}
+
 @media (min-width: 640px) {
   .context-document,
   .context-empty {

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { registerErrorHandling } from "./errors.js";
 import { projectRoutes } from "./routes/projects.js";
 import { recordRoutes } from "./routes/records.js";
+import { searchRoutes } from "./routes/search.js";
 import { taskRoutes } from "./routes/tasks.js";
 
 export const API_PREFIX = "/api/v1";
@@ -69,6 +70,7 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
   void app.register(projectRoutes(workspace), { prefix: API_PREFIX });
   void app.register(taskRoutes(workspace), { prefix: API_PREFIX });
   void app.register(recordRoutes(workspace), { prefix: API_PREFIX });
+  void app.register(searchRoutes(workspace), { prefix: API_PREFIX });
 
   const webRoot = options.webRoot === undefined ? defaultWebRoot() : options.webRoot;
   if (webRoot) {

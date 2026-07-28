@@ -32,7 +32,9 @@ import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { ActivityService } from "../activity/service.js";
 import { listBlockerRows, toBlockerDto } from "../blockers/repository.js";
 import type { ClaimService } from "../claims/service.js";
+import type { ContextService } from "../context/service.js";
 import type { ExecutionService } from "../executions/service.js";
+import type { EvidenceService } from "../evidence/service.js";
 import { queryDecisions } from "../decisions/repository.js";
 import { nextKey } from "../ids.js";
 import { queryLinks } from "../links/repository.js";
@@ -45,6 +47,7 @@ import {
   requireWritableProject,
 } from "../refs.js";
 import type { Runtime } from "../runtime.js";
+import type { SearchService } from "../search/service.js";
 import {
   addCriteria,
   completeCriterion,
@@ -87,7 +90,10 @@ export function createTaskService(
   runtime: Runtime,
   activity: ActivityService,
   claims: ClaimService,
+  contexts: ContextService,
   executions?: ExecutionService,
+  search?: SearchService,
+  evidence?: EvidenceService,
 ) {
   function summarise(row: TaskRow): TaskSummary {
     return toTaskSummary(runtime, row, buildAggregates(runtime, claims, [row], {}, executions));
@@ -155,7 +161,7 @@ export function createTaskService(
       assertParentAllowed(null, parent, project);
     }
 
-    const row = runtime.db
+    const inserted = runtime.db
       .insert(tasks)
       .values({
         id: runtime.newId(),
@@ -174,6 +180,11 @@ export function createTaskService(
       })
       .returning()
       .get();
+    const row = contexts.initialiseTask(inserted, {
+      actor: meta.actor,
+      sessionId: meta.sessionId,
+      reason: "Initial task context.",
+    });
 
     activity.record({
       projectId: project.id,
@@ -206,6 +217,13 @@ export function createTaskService(
     return runtime.tx(() => {
       const task = requireTask(runtime, taskRef);
       requireWritableProject(runtime, task.projectId);
+      if (input.force && !input.reason?.trim()) {
+        throw new AgentContinuityError(
+          "VALIDATION_ERROR",
+          "A non-empty reason is required when forcing task completion.",
+          { task: task.key },
+        );
+      }
 
       const criteria = listCriteria(runtime, task.id);
       const incomplete = criteria.filter((criterion) => criterion.isComplete === 0);
@@ -236,6 +254,17 @@ export function createTaskService(
         );
       }
 
+      const missingEvidence = evidence?.missingForTask(task.id) ?? [];
+      if (missingEvidence.length > 0 && !input.force) {
+        throw new AgentContinuityError(
+          "TASK_HAS_MISSING_ACCEPTANCE_EVIDENCE",
+          `${task.key} has ${missingEvidence.length} acceptance ${
+            missingEvidence.length === 1 ? "criterion" : "criteria"
+          } without the required evidence. Add qualifying evidence, change the policy, or pass force with a reason.`,
+          { task: task.key, missing: missingEvidence },
+        );
+      }
+
       const updated = writeStatus(runtime, activity, task, "done", {
         actor: input.actor,
         sessionId: input.sessionId,
@@ -262,6 +291,10 @@ export function createTaskService(
           ...(input.force && incomplete.length > 0
             ? { skippedCriteria: incomplete.map((criterion) => criterion.description) }
             : {}),
+          ...(input.force && activeBlockers.length > 0
+            ? { skippedBlockers: activeBlockers.map((blocker) => blocker.key) }
+            : {}),
+          ...(input.force && missingEvidence.length > 0 ? { missingEvidence } : {}),
         },
       });
 
@@ -290,7 +323,15 @@ export function createTaskService(
         status: project.status as ProjectStatus,
         objective: project.objective,
       },
-      acceptanceCriteria: listCriteria(runtime, row.id).map(toCriterionDto),
+      acceptanceCriteria: listCriteria(runtime, row.id).map((criterion) => ({
+        ...toCriterionDto(criterion),
+        ...(evidence
+          ? {
+              evidence: evidence.list(row.id, criterion.id),
+              evidencePolicy: evidence.getPolicy(row.id, criterion.id),
+            }
+          : {}),
+      })),
       dependencies: aggregates.dependencies.get(row.id) ?? [],
       dependents: aggregates.dependents.get(row.id) ?? [],
       progress: progressRows.map((entry) => toProgressDto(entry, row.key)),
@@ -396,11 +437,11 @@ export function createTaskService(
 
         // Completion has its own rules, so a status change to done routes through them.
         if (input.status === "done" && task.status !== "done") {
-          applyFieldUpdates(task, project, input);
+          applyUpdates(task, project, input);
           return completeTask(task.id, { force: false, ...meta });
         }
 
-        const updated = applyFieldUpdates(task, project, input);
+        const updated = applyUpdates(task, project, input);
 
         if (input.status && input.status !== task.status) {
           if (task.status === "blocked" && input.status !== "blocked") {
@@ -425,31 +466,7 @@ export function createTaskService(
     },
 
     updateContext(taskRef: string, input: UpdateTaskContextInput): TaskSummary {
-      return runtime.tx(() => {
-        const task = requireTask(runtime, taskRef);
-        requireWritableProject(runtime, task.projectId);
-
-        const previous = task.context ?? "";
-        const updated = runtime.db
-          .update(tasks)
-          .set({ context: input.context, updatedAt: runtime.now() })
-          .where(eq(tasks.id, task.id))
-          .returning()
-          .get();
-
-        activity.record({
-          projectId: task.projectId,
-          taskId: task.id,
-          eventType: "task.context_updated",
-          actor: input.actor,
-          sessionId: input.sessionId,
-          // Lengths only: activity must not duplicate potentially large context values.
-          payload: { previousLength: previous.length, newLength: input.context.length },
-        });
-
-        claims.touch(task.id, input.actor, input.sessionId);
-        return summarise(updated);
-      });
+      return summarise(contexts.replaceTask(taskRef, input));
     },
 
     complete: completeTask,
@@ -527,10 +544,14 @@ export function createTaskService(
       return reopenCriterion(runtime, activity, claims, task, ref, meta);
     },
 
-    deleteAcceptanceCriterion(taskRef: string, ref: string): void {
+    deleteAcceptanceCriterion(
+      taskRef: string,
+      ref: string,
+      meta: { actor?: string | undefined; sessionId?: string | undefined } = {},
+    ): void {
       const task = requireTask(runtime, taskRef);
       requireWritableProject(runtime, task.projectId);
-      deleteCriterion(runtime, task, ref);
+      deleteCriterion(runtime, activity, task, ref, meta);
     },
 
     /** Resolves the owning task first, for routes that address a criterion by id alone. */
@@ -618,6 +639,7 @@ export function createTaskService(
         });
 
         runtime.db.delete(tasks).where(eq(tasks.id, task.id)).run();
+        search?.refreshScope(project.id);
         return summary;
       });
     },
@@ -670,6 +692,19 @@ export function createTaskService(
   };
 
   /** Applies every editable column except `status`, which has its own transition rules. */
+  function applyUpdates(task: TaskRow, project: ProjectRow, input: UpdateTaskInput): TaskRow {
+    const fields = applyFieldUpdates(task, project, input);
+    if (input.context === undefined) return fields;
+    return contexts.replaceTaskRow(fields, {
+      context: input.context,
+      expectedVersion: input.expectedContextVersion!,
+      reason: input.contextReason,
+      actor: input.actor,
+      sessionId: input.sessionId,
+    });
+  }
+
+  /** Applies every editable column except `status` and versioned context. */
   function applyFieldUpdates(task: TaskRow, project: ProjectRow, input: UpdateTaskInput): TaskRow {
     assertWritable(project);
 
@@ -701,10 +736,6 @@ export function createTaskService(
       }
     }
 
-    const contextChanged =
-      input.context !== undefined && (input.context ?? null) !== task.context;
-    if (contextChanged) changes.context = input.context ?? null;
-
     if (Object.keys(changes).length === 0) return task;
 
     const updated = runtime.db
@@ -722,20 +753,6 @@ export function createTaskService(
         actor: input.actor,
         sessionId: input.sessionId,
         payload: { changed },
-      });
-    }
-
-    if (contextChanged) {
-      activity.record({
-        projectId: task.projectId,
-        taskId: task.id,
-        eventType: "task.context_updated",
-        actor: input.actor,
-        sessionId: input.sessionId,
-        payload: {
-          previousLength: (task.context ?? "").length,
-          newLength: (input.context ?? "").length,
-        },
       });
     }
 

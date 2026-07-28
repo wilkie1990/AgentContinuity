@@ -5,12 +5,14 @@ import {
   decisions,
   links,
   projects,
+  repositories,
   tasks,
   type AcceptanceCriterionRow,
   type BlockerRow,
   type DecisionRow,
   type LinkRow,
   type ProjectRow,
+  type RepositoryRow,
   type TaskRow,
 } from "@agent-continuity/database";
 import { eq, or } from "drizzle-orm";
@@ -40,6 +42,27 @@ export function requireProject(runtime: Runtime, ref: string): ProjectRow {
     throw new AgentContinuityError("PROJECT_NOT_FOUND", `No project matches "${ref}".`, { ref });
   }
   return project;
+}
+
+export function findRepository(runtime: Runtime, ref: string): RepositoryRow | undefined {
+  const { id, key } = keyCandidates(ref);
+  return runtime.db
+    .select()
+    .from(repositories)
+    .where(key ? or(eq(repositories.id, id), eq(repositories.key, key)) : eq(repositories.id, id))
+    .get();
+}
+
+export function requireRepository(runtime: Runtime, ref: string): RepositoryRow {
+  const repository = findRepository(runtime, ref);
+  if (!repository) {
+    throw new AgentContinuityError(
+      "REPOSITORY_NOT_FOUND",
+      `No repository association matches "${ref}".`,
+      { ref },
+    );
+  }
+  return repository;
 }
 
 /** Mutations are rejected on archived projects; reads remain available. */

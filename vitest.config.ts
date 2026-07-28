@@ -18,7 +18,12 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    include: ["packages/**/*.test.ts", "apps/server/**/*.test.ts", "apps/mcp/**/*.test.ts"],
+    include: [
+      "packages/**/*.test.ts",
+      "apps/cli/**/*.test.ts",
+      "apps/server/**/*.test.ts",
+      "apps/mcp/**/*.test.ts",
+    ],
     exclude: ["**/node_modules/**", "**/dist/**", "apps/web/**", "e2e/**"],
   },
 });

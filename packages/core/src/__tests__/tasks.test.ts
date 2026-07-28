@@ -135,13 +135,22 @@ describe("task service", () => {
 
   it("records context updates by length only", () => {
     const task = seedTask(workspace, projectKey);
-    workspace.tasks.updateContext(task.key, { context: "Permanent assignment was rejected." });
+    workspace.tasks.updateContext(task.key, {
+      context: "Permanent assignment was rejected.",
+      expectedVersion: 0,
+    });
 
     const event = workspace.activity
       .listForProject(projectKey, { limit: 100 })
       .events.find((candidate) => candidate.eventType === "task.context_updated");
 
-    expect(event?.payload).toEqual({ previousLength: 0, newLength: 34 });
+    expect(event?.payload).toEqual({
+      previousVersion: 0,
+      newVersion: 1,
+      previousLength: 0,
+      newLength: 34,
+      newBytes: 34,
+    });
   });
 
   it("rejects a parent task from another project", () => {

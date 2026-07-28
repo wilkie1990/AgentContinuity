@@ -5,11 +5,12 @@ export const KEY_PREFIXES = {
   decision: "DEC",
   blocker: "BLK",
   link: "LNK",
+  repository: "REP",
 } as const;
 
 export type KeyEntity = keyof typeof KEY_PREFIXES;
 
-const KEY_PATTERN = /^(PRJ|TASK|DEC|BLK|LNK)-(\d{1,10})$/i;
+const KEY_PATTERN = /^(PRJ|TASK|DEC|BLK|LNK|REP)-(\d{1,10})$/i;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function formatKey(entity: KeyEntity, value: number): string {

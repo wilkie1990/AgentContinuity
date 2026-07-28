@@ -7,6 +7,7 @@ import type {
 import { activityEvents } from "@agent-continuity/database";
 import { requireProject, requireTask } from "../refs.js";
 import type { Runtime } from "../runtime.js";
+import type { SearchService } from "../search/service.js";
 import { encodeCursor, queryActivity, type ActivityFilter } from "./repository.js";
 
 export type RecordEventInput = {
@@ -20,26 +21,29 @@ export type RecordEventInput = {
 
 export type ActivityService = ReturnType<typeof createActivityService>;
 
-export function createActivityService(runtime: Runtime) {
+export function createActivityService(runtime: Runtime, search: SearchService) {
   return {
     /**
      * Appends a structured event. Activity is history only: the relational tables
      * remain the source of truth for current state.
      */
     record(input: RecordEventInput): void {
-      runtime.db
-        .insert(activityEvents)
-        .values({
-          id: runtime.newId(),
-          projectId: input.projectId,
-          taskId: input.taskId ?? null,
-          eventType: input.eventType,
-          actor: input.actor ?? null,
-          sessionId: input.sessionId ?? null,
-          payloadJson: JSON.stringify(input.payload ?? {}),
-          createdAt: runtime.now(),
-        })
-        .run();
+      runtime.tx(() => {
+        runtime.db
+          .insert(activityEvents)
+          .values({
+            id: runtime.newId(),
+            projectId: input.projectId,
+            taskId: input.taskId ?? null,
+            eventType: input.eventType,
+            actor: input.actor ?? null,
+            sessionId: input.sessionId ?? null,
+            payloadJson: JSON.stringify(input.payload ?? {}),
+            createdAt: runtime.now(),
+          })
+          .run();
+        search.refreshScope(input.projectId, input.taskId);
+      });
     },
 
     listForProject(projectRef: string, query: ListActivityQuery): ActivityPage {

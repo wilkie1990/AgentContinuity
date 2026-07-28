@@ -1,10 +1,15 @@
 import { createTestWorkspace, type TestWorkspace } from "@agent-continuity/core/testing";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { MCP_AGENT_TOOL_NAMES, MCP_FULL_TOOL_NAMES, parseMcpProfile } from "../profile.js";
 import { createMcpServer } from "../server.js";
 
 type CallResult = { text: string; isError: boolean };
+const temporaryDirectories: string[] = [];
 
 describe("MCP adapter", () => {
   let workspace: TestWorkspace;
@@ -40,6 +45,9 @@ describe("MCP adapter", () => {
   afterEach(async () => {
     await close();
     workspace.close();
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("advertises the documented tool surface", async () => {
@@ -55,13 +63,26 @@ describe("MCP adapter", () => {
         "links_add",
         "links_list",
         "links_remove",
+        "profile_info",
+        "handoff",
         "projects_bootstrap",
+        "projects_context_history",
+        "projects_context_revert",
+        "projects_context_version_get",
         "projects_create",
         "projects_delete",
         "projects_get",
         "projects_list",
         "projects_update",
         "projects_update_context",
+        "report",
+        "repositories_add",
+        "repositories_get",
+        "repositories_list",
+        "repositories_remove",
+        "repositories_update",
+        "start_work",
+        "search",
         "tasks_add_acceptance_criteria",
         "tasks_add_blocker",
         "tasks_add_criterion_evidence",
@@ -71,12 +92,21 @@ describe("MCP adapter", () => {
         "tasks_checkpoint",
         "tasks_claim",
         "tasks_complete",
+        "tasks_criterion_evidence",
+        "tasks_criterion_evidence_policy",
+        "tasks_context_history",
+        "tasks_context_revert",
+        "tasks_context_version_get",
         "tasks_create",
         "tasks_delete",
         "tasks_get",
         "tasks_execution_get",
+        "tasks_git_provenance_capture",
+        "tasks_git_provenance_get",
         "tasks_heartbeat",
         "tasks_list",
+        "tasks_path_ownership_get",
+        "tasks_path_ownership_set",
         "tasks_release_claim",
         "tasks_remove_dependency",
         "tasks_resolve_blocker",
@@ -84,18 +114,461 @@ describe("MCP adapter", () => {
         "tasks_update_acceptance_criteria",
         "tasks_update_context",
         "tasks_work_plan",
+        "tasks_worktree_bind",
+        "tasks_worktree_get",
+        "tasks_worktree_unbind",
       ].sort(),
     );
+    expect(names).toEqual([...MCP_FULL_TOOL_NAMES].sort());
 
     for (const tool of tools) {
       expect(tool.description, `${tool.name} needs a description`).toBeTruthy();
       expect(tool.inputSchema).toBeTruthy();
     }
+    expect(names.some((name) => /verify|command|execute|run/.test(name))).toBe(false);
+    const evidenceTool = tools.find((tool) => tool.name === "tasks_add_criterion_evidence")!;
+    expect(JSON.stringify(evidenceTool.inputSchema)).not.toMatch(/executable|cwd|timeout/);
+  });
+
+  it("supports complete non-destructive work through the agent profile", async () => {
+    const agentServer = createMcpServer(workspace, { profile: parseMcpProfile("agent") });
+    const [agentTransport, agentServerTransport] = InMemoryTransport.createLinkedPair();
+    const agentClient = new Client({ name: "agent-profile-test", version: "0.0.0" });
+    try {
+      await Promise.all([agentClient.connect(agentTransport), agentServer.connect(agentServerTransport)]);
+      const { tools } = await agentClient.listTools();
+      const names = tools.map((tool) => tool.name).sort();
+      expect(names).toEqual([...MCP_AGENT_TOOL_NAMES].sort());
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "projects_list", "projects_bootstrap", "projects_get", "projects_update_context",
+          "repositories_add", "tasks_get", "tasks_update_context", "attention_list", "search",
+          "start_work", "report", "handoff", "tasks_work_plan", "tasks_path_ownership_set",
+          "tasks_add_blocker", "tasks_resolve_blocker", "decisions_create",
+          "tasks_add_criterion_evidence", "tasks_update_acceptance_criteria", "tasks_complete",
+        ]),
+      );
+      expect(names).not.toEqual(expect.arrayContaining([
+        "projects_delete", "repositories_remove", "tasks_delete", "links_remove",
+        "tasks_claim", "tasks_release_claim", "tasks_heartbeat", "tasks_checkpoint",
+      ]));
+
+      const agentCall = async (
+        name: string,
+        args: Record<string, unknown> = {},
+      ): Promise<CallResult> => {
+        const result = (await agentClient.callTool({ name, arguments: args })) as {
+          content?: { type: string; text?: string }[];
+          isError?: boolean;
+        };
+        return {
+          text: (result.content ?? [])
+            .filter((entry) => entry.type === "text")
+            .map((entry) => entry.text ?? "")
+            .join("\n"),
+          isError: result.isError === true,
+        };
+      };
+
+      const guidance = (await agentCall("profile_info")).text;
+      expect(guidance).toContain("AGENT_CONTINUITY_MCP_PROFILE=full");
+      expect(guidance).toContain("generic dispatcher");
+
+      expect(
+        (
+          await agentCall("projects_bootstrap", {
+            name: "Agent profile workflow",
+            tasks: [
+              {
+                ref: "complete",
+                title: "Complete profile task",
+                status: "ready",
+                acceptance_criteria: ["Profile work is proven"],
+              },
+              { ref: "handoff", title: "Handoff profile task", status: "ready" },
+            ],
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).isError,
+      ).toBe(false);
+      expect((await agentCall("projects_list")).text).toContain("Agent profile workflow");
+      expect((await agentCall("projects_get", { project: "PRJ-0001" })).text).toContain(
+        "Agent profile workflow",
+      );
+      expect(
+        (await agentCall("tasks_get", { task: "TASK-0001" })).text,
+      ).toContain("Complete profile task");
+      expect(
+        (
+          await agentCall("projects_update_context", {
+            project: "PRJ-0001",
+            context: "Durable profile context.",
+            expected_version: 0,
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).isError,
+      ).toBe(false);
+
+      const root = mkdtempSync(join(tmpdir(), "agent-continuity-agent-profile-"));
+      temporaryDirectories.push(root);
+      const worktree = join(root, "worktree");
+      mkdirSync(worktree);
+      expect(
+        (
+          await agentCall("repositories_add", {
+            project: "PRJ-0001",
+            label: "Profile repository",
+            root_path: root,
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).isError,
+      ).toBe(false);
+      expect(
+        (
+          await agentCall("start_work", {
+            task: "TASK-0001",
+            actor: "profile-agent",
+            session_id: "profile-session",
+            worktree: {
+              repository: "REP-0001",
+              worktree_path: worktree,
+              branch: "profile-test",
+            },
+          })
+        ).text,
+      ).toContain("Work started");
+      expect(
+        (
+          await agentCall("tasks_update_context", {
+            task: "TASK-0001",
+            context: "Durable task context.",
+            expected_version: 0,
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).isError,
+      ).toBe(false);
+      expect(
+        (
+          await agentCall("tasks_work_plan", {
+            task: "TASK-0001",
+            items: ["Implement", "Verify"],
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("Work plan updated");
+      expect(
+        (
+          await agentCall("tasks_path_ownership_set", {
+            task: "TASK-0001",
+            paths: [{ path: "apps/mcp", kind: "directory" }],
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("directory: apps/mcp");
+      expect(
+        (
+          await agentCall("report", {
+            task: "TASK-0001",
+            actor: "profile-agent",
+            session_id: "profile-session",
+            progress: "Measured profile workflow.",
+          })
+        ).text,
+      ).toContain("Measured profile workflow");
+      expect(
+        (
+          await agentCall("decisions_create", {
+            project: "PRJ-0001",
+            task: "TASK-0001",
+            title: "Keep typed tools",
+            decision: "Use named typed operations.",
+            rationale: "Preserves auditability.",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("Recorded DEC-0001");
+      expect(
+        (
+          await agentCall("tasks_add_blocker", {
+            task: "TASK-0001",
+            description: "Temporary profile test blocker.",
+            required_action: "Resolve it in the same workflow.",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("BLK-0001");
+      expect(
+        (
+          await agentCall("tasks_resolve_blocker", {
+            blocker: "BLK-0001",
+            resolution: "The profile exposes blocker resolution.",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("Resolved BLK-0001");
+      expect(
+        (
+          await agentCall("search", {
+            query: "Measured profile workflow",
+            project: "PRJ-0001",
+          })
+        ).text,
+      ).toContain("[Measured] [profile] [workflow]");
+      expect(
+        (
+          await agentCall("tasks_add_criterion_evidence", {
+            task: "TASK-0001",
+            criterion: "Profile work is proven",
+            kind: "test",
+            name: "Agent profile lifecycle",
+            outcome: "passed",
+            reference: "apps/mcp/src/__tests__/mcp.test.ts",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("(test) attached");
+      expect(
+        (
+          await agentCall("tasks_update_acceptance_criteria", {
+            task: "TASK-0001",
+            complete: ["Profile work is proven"],
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("(1/1)");
+      expect(
+        (
+          await agentCall("tasks_complete", {
+            task: "TASK-0001",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("Completed TASK-0001");
+      expect((await agentCall("tasks_get", { task: "TASK-0001" })).text).toContain("Status: done");
+      expect(
+        (
+          await agentCall("start_work", {
+            task: "TASK-0002",
+            actor: "profile-agent",
+            session_id: "profile-session",
+          })
+        ).text,
+      ).toContain("Work started");
+      expect(
+        (
+          await agentCall("handoff", {
+            task: "TASK-0002",
+            actor: "profile-agent",
+            session_id: "profile-session",
+            checkpoint: {
+              completed: "Measured reduced profile.",
+              working_on: "Nothing.",
+              next: "Review results.",
+            },
+          })
+        ).text,
+      ).toContain("Claim released safely");
+    } finally {
+      await agentClient.close();
+      await agentServer.close();
+    }
+  });
+
+  it("rejects unknown MCP profile names before server startup", () => {
+    expect(() => parseMcpProfile("tiny")).toThrow('Invalid MCP profile "tiny"');
   });
 
   it("rejects input that does not satisfy a tool schema", async () => {
     const result = await call("projects_create", {});
     expect(result.isError).toBe(true);
+  });
+
+  it("exposes unified search through MCP", async () => {
+    await call("projects_create", {
+      name: "Search MCP",
+      context: "projectmcpneedle",
+    });
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [
+        {
+          title: "Searchable MCP task",
+          context: "taskmcpcontextneedle",
+        },
+      ],
+    });
+
+    const result = await call("search", {
+      query: "taskmcpcontextneedle",
+      project: "PRJ-0001",
+      task: "TASK-0001",
+      type: ["task_context"],
+      limit: 5,
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("task_context — TASK-0001:context");
+    expect(result.text).toContain("[taskmcpcontextneedle]");
+
+    expect(
+      (
+        await call("search", {
+          query: "needle",
+          type: ["not_a_source_type"],
+        })
+      ).isError,
+    ).toBe(true);
+  });
+
+  it("exposes optimistic context history and append-only revert tools", async () => {
+    await call("projects_create", {
+      name: "Context MCP",
+      context: "project version one",
+      actor: "codex",
+    });
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [{ title: "Task", context: "task version one" }],
+    });
+
+    const updated = await call("projects_update_context", {
+      project: "PRJ-0001",
+      context: "project version two",
+      expected_version: 1,
+      reason: "MCP edit",
+      actor: "codex",
+    });
+    expect(updated.isError).toBe(false);
+    expect(updated.text).toContain("v2");
+
+    const history = await call("projects_context_history", {
+      project: "PRJ-0001",
+      limit: 1,
+    });
+    expect(history.text).toContain("v2 (current)");
+    expect(history.text).toContain("MCP edit");
+    expect(history.text).not.toContain("project version two");
+
+    const version = await call("projects_context_version_get", {
+      project: "PRJ-0001",
+      version: 1,
+    });
+    expect(version.text).toContain("project version one");
+
+    const stale = await call("projects_update_context", {
+      project: "PRJ-0001",
+      context: "stale",
+      expected_version: 1,
+    });
+    expect(stale.isError).toBe(true);
+    expect(stale.text).toContain("CONTEXT_VERSION_CONFLICT");
+
+    const reverted = await call("projects_context_revert", {
+      project: "PRJ-0001",
+      target_version: 1,
+      expected_version: 2,
+      actor: "codex",
+    });
+    expect(reverted.text).toContain("v3");
+
+    await call("tasks_update_context", {
+      task: "TASK-0001",
+      context: "task version two",
+      expected_version: 1,
+    });
+    expect(
+      (await call("tasks_context_history", { task: "TASK-0001" })).text,
+    ).toContain("v2 (current)");
+    expect(
+      (
+        await call("tasks_context_version_get", {
+          task: "TASK-0001",
+          version: 1,
+        })
+      ).text,
+    ).toContain("task version one");
+    expect(
+      (
+        await call("tasks_context_revert", {
+          task: "TASK-0001",
+          target_version: 1,
+          expected_version: 2,
+        })
+      ).text,
+    ).toContain("v3");
+  });
+
+  it("exposes composite start, report and handoff workflows through MCP", async () => {
+    await call("projects_create", {
+      name: "Composite MCP",
+      context: "MCP project context",
+    });
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [{ title: "Composite lifecycle", context: "MCP task context", status: "ready" }],
+    });
+
+    expect(
+      (await call("start_work", { task: "TASK-0001", actor: "codex" })).isError,
+    ).toBe(true);
+
+    const started = await call("start_work", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "run-1",
+    });
+    expect(started.isError).toBe(false);
+    expect(started.text).toContain("MCP project context");
+    expect(started.text).toContain("MCP task context");
+    expect(started.text).toContain("Resume state: new execution");
+
+    const reported = await call("report", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "run-1",
+      phase: "MCP verification",
+      progress: "MCP workflow exposed.",
+      checkpoint: {
+        completed: "Start",
+        working_on: "Report",
+        next: "Handoff",
+      },
+    });
+    expect(reported.isError).toBe(false);
+    expect(reported.text).toContain("MCP verification");
+    expect(reported.text).toContain("MCP workflow exposed.");
+
+    const handedOff = await call("handoff", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "run-1",
+      checkpoint: {
+        completed: "Composite lifecycle",
+        working_on: "Nothing",
+        next: "Next agent continues",
+      },
+    });
+    expect(handedOff.isError).toBe(false);
+    expect(handedOff.text).toContain("Next agent continues");
+    expect(handedOff.text).toContain("Claim released safely");
+
+    const invalid = await call("handoff", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "run-1",
+    });
+    expect(invalid.isError).toBe(true);
   });
 
   it("exposes the execution continuity lifecycle through MCP", async () => {
@@ -136,10 +609,23 @@ describe("MCP adapter", () => {
     await call("tasks_add_criterion_evidence", {
       task: "TASK-0001",
       criterion: "Proven",
-      type: "test",
+      kind: "test",
+      name: "MCP suite",
+      outcome: "passed",
       reference: "mcp.test.ts",
       actor: "codex",
     });
+    expect(
+      (
+        await call("tasks_criterion_evidence_policy", {
+          task: "TASK-0001",
+          criterion: "Proven",
+          minimum_count: 1,
+          qualifying_kinds: ["test"],
+          actor: "codex",
+        })
+      ).text,
+    ).toContain('"minimumCount": 1');
     await call("tasks_add_execution_origin", {
       task: "TASK-0001",
       provider: "codex",
@@ -151,6 +637,103 @@ describe("MCP adapter", () => {
     expect(state.text).toContain("Verification");
     expect(state.text).toContain("Implement");
     expect((await call("attention_list")).text).toContain("No work needs attention");
+  });
+
+  it("exposes explicit repository and worktree operations through MCP", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-continuity-mcp-repository-"));
+    temporaryDirectories.push(root);
+    const worktree = join(root, "worktree");
+    mkdirSync(worktree);
+
+    await call("projects_create", { name: "Repository tools" });
+    const associated = await call("repositories_add", {
+      project: "PRJ-0001",
+      label: "Main",
+      root_path: root,
+      remote_url: "https://example.test/team/main.git/",
+      actor: "codex",
+    });
+    expect(associated.isError).toBe(false);
+    expect(associated.text).toContain("REP-0001 — Main (primary)");
+    expect((await call("repositories_list", { project: "PRJ-0001" })).text).toContain(
+      realpathSync.native(root),
+    );
+
+    await call("repositories_update", {
+      project: "PRJ-0001",
+      repository: "REP-0001",
+      label: "Main repository",
+      actor: "codex",
+    });
+    expect(
+      (await call("repositories_get", { project: "PRJ-0001", repository: "REP-0001" })).text,
+    ).toContain("Main repository");
+
+    await call("tasks_create", {
+      project: "PRJ-0001",
+      tasks: [{ title: "Bound MCP execution", status: "ready" }],
+    });
+    const started = await call("start_work", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "repository-mcp-run",
+      worktree: {
+        repository: "REP-0001",
+        worktree_path: worktree,
+        branch: "feature/mcp",
+      },
+    });
+    expect(started.isError).toBe(false);
+    const summary = await call("tasks_execution_get", { task: "TASK-0001" });
+    expect(summary.text).toContain("Worktree: REP-0001 (feature/mcp)");
+    expect(summary.text).toContain("Git baseline: error");
+    expect(summary.text).not.toContain(realpathSync.native(root));
+    const ownership = await call("tasks_path_ownership_set", {
+      task: "TASK-0001",
+      paths: [
+        { path: "src/index.ts", kind: "file" },
+        { path: "docs", kind: "directory" },
+      ],
+      actor: "codex",
+      session_id: "repository-mcp-run",
+    });
+    expect(ownership.isError).toBe(false);
+    expect(ownership.text).toContain("file: src/index.ts");
+    expect(
+      (await call("tasks_path_ownership_get", { task: "TASK-0001" })).text,
+    ).toContain("Path ownership revision: 1");
+    const provenance = await call("tasks_git_provenance_get", { task: "TASK-0001" });
+    expect(provenance.text).toContain("Source: local_git; repository: REP-0001");
+    const capture = await call("tasks_git_provenance_capture", { task: "TASK-0001" });
+    expect(capture.isError).toBe(false);
+    expect(capture.text).toContain("Latest: manual — error");
+
+    const explicit = await call("tasks_worktree_get", { task: "TASK-0001" });
+    expect(explicit.text).toContain(realpathSync.native(worktree));
+    expect(
+      (
+        await call("repositories_remove", {
+          project: "PRJ-0001",
+          repository: "REP-0001",
+          force: true,
+        })
+      ).text,
+    ).toContain("REPOSITORY_IN_USE");
+
+    const unbound = await call("tasks_worktree_unbind", {
+      task: "TASK-0001",
+      actor: "codex",
+      session_id: "repository-mcp-run",
+    });
+    expect(unbound.isError).toBe(false);
+    expect(
+      (
+        await call("repositories_remove", {
+          project: "PRJ-0001",
+          repository: "REP-0001",
+        })
+      ).isError,
+    ).toBe(false);
   });
 
   it("preserves the domain error code", async () => {
@@ -276,6 +859,7 @@ describe("MCP adapter", () => {
     await call("tasks_update_context", {
       task: "TASK-0001",
       context: "The identifier strategy is UUID internally with a human readable key.",
+      expected_version: 0,
       actor: "codex",
       session_id: "session-a",
     });

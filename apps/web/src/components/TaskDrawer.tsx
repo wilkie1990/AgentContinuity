@@ -2,11 +2,12 @@ import type { TaskPriority, TaskStatus, WorkPlanItem } from "@agent-continuity/c
 import { useEffect, useState, type FormEvent } from "react";
 import { client, useExecutionState, useTask, useWorkspaceMutation } from "../api.js";
 import { BOARD_COLUMNS, describeEvent, formatDateTime, formatTime } from "../format.js";
-import { useSyncedDraft } from "../hooks.js";
+import { useSyncedDraft, useVersionedSyncedDraft } from "../hooks.js";
 import { Empty, ErrorNote, UI_ACTOR } from "./common.js";
 import { DrawerSection } from "./DrawerSection.js";
 import { ExecutionHealthBadge } from "./ExecutionStatus.js";
 import { MarkdownContextEditor } from "./MarkdownContextEditor.js";
+import { ContextHistoryPanel, ContextSizeStatus } from "./ContextHistoryPanel.js";
 import { Skeleton } from "./StatePlaceholders.js";
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
@@ -93,7 +94,11 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
   // refetch (polling, window refocus) while the field is mid-edit — see
   // useSyncedDraft.
   const [description, setDescription] = useSyncedDraft(task?.description, task?.id);
-  const [context, setContext] = useSyncedDraft(task?.context, task?.id);
+  const [context, setContext, expectedContextVersion] = useVersionedSyncedDraft(
+    task?.context,
+    task?.contextVersion,
+    task?.id,
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -108,7 +113,12 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
     client.tasks.update(taskKey, { ...input, ...meta }),
   );
   const saveContext = useWorkspaceMutation(projectKey, (value: string) =>
-    client.tasks.updateContext(taskKey, { context: value, ...meta }),
+    client.tasks.updateContext(taskKey, {
+      context: value,
+      expectedVersion: expectedContextVersion.current,
+      reason: "Updated from the web UI.",
+      ...meta,
+    }),
   );
   const addCriteria = useWorkspaceMutation(projectKey, (value: string) =>
     client.tasks.addAcceptanceCriteria(taskKey, [value], meta),
@@ -291,6 +301,33 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                 <h4>Work plan</h4>
                 <WorkPlan items={executionState.data?.workPlan ?? []} />
               </div>
+              <div>
+                <h4>Path ownership</h4>
+                {executionState.data?.ownership ? (
+                  <div className="small">
+                    {executionState.data.ownership.paths.length === 0 ? (
+                      <p className="muted">No paths declared in the current revision.</p>
+                    ) : (
+                      <ul>
+                        {executionState.data.ownership.paths.map((entry) => (
+                          <li key={entry.id}>
+                            <code>{entry.path}</code> ({entry.kind})
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {executionState.data.collisions.length > 0 && (
+                      <p className="uncertainty">
+                        {executionState.data.collisions.length} live advisory collision
+                        {executionState.data.collisions.length === 1 ? "" : "s"}. See Needs Attention
+                        before editing overlapping paths.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="small muted">No path ownership has been declared.</p>
+                )}
+              </div>
               <div className="handoff-placeholder">
                 <h4>Handoff</h4>
                 {executionState.data?.handoff ? (
@@ -335,6 +372,13 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
                 onChange={setContext}
                 onSave={(next) => saveContext.mutateAsync(next)}
               />
+              <ContextSizeStatus version={task.contextVersion} size={task.contextSize} />
+              <ContextHistoryPanel
+                ownerType="task"
+                ownerRef={task.key}
+                projectRef={task.project.key}
+                currentVersion={task.contextVersion}
+              />
             </DrawerSection>
 
             <DrawerSection
@@ -351,19 +395,47 @@ export function TaskDrawer({ taskKey, onClose }: { taskKey: string; onClose: () 
             >
               {task.acceptanceCriteria.length === 0 && <Empty>No acceptance criteria yet.</Empty>}
               {task.acceptanceCriteria.map((criterion) => (
-                <label
+                <div
                   key={criterion.id}
-                  className={`criterion${criterion.isComplete ? " complete" : ""}`}
+                  className="criterion-card"
                 >
-                  <input
-                    type="checkbox"
-                    checked={criterion.isComplete}
-                    onChange={(event) =>
-                      toggleCriterion.mutate({ id: criterion.id, complete: event.target.checked })
-                    }
-                  />
-                  <span>{criterion.description}</span>
-                </label>
+                  <label className={`criterion${criterion.isComplete ? " complete" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={criterion.isComplete}
+                      onChange={(event) =>
+                        toggleCriterion.mutate({ id: criterion.id, complete: event.target.checked })
+                      }
+                    />
+                    <span>{criterion.description}</span>
+                  </label>
+                  {criterion.evidencePolicy && (
+                    <div className="criterion-meta">
+                      Requires {criterion.evidencePolicy.minimumCount}{" "}
+                      {criterion.evidencePolicy.qualifyingKinds.join("/")} evidence
+                      {criterion.evidencePolicy.requireSha ? " with SHA" : ""}
+                      {criterion.evidencePolicy.requirePassingVerification
+                        ? " from passing local verification"
+                        : ""}
+                    </div>
+                  )}
+                  {(criterion.evidence ?? []).map((evidence) => (
+                    <div key={evidence.id} className="criterion-meta">
+                      <strong>{evidence.kind}</strong>
+                      {evidence.scope?.sha
+                        ? ` · ${evidence.scope.repositoryKey}@${evidence.scope.sha.slice(0, 12)}`
+                        : ""}
+                      {evidence.kind === "test" && evidence.verification
+                        ? ` · ${evidence.verification.outcome}${
+                            evidence.verification.stdoutTruncated ||
+                            evidence.verification.stderrTruncated
+                              ? " · output truncated"
+                              : ""
+                          }`
+                        : ""}
+                    </div>
+                  ))}
+                </div>
               ))}
               <AddForm
                 label="Add criterion"

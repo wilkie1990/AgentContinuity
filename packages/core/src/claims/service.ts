@@ -3,6 +3,7 @@ import {
   type ClaimTaskInput,
   type ReleaseClaimInput,
   type RenewClaimInput,
+  type TaskCheckpoint,
   type TaskClaim,
 } from "@agent-continuity/contracts";
 import { projects, taskClaims, type TaskClaimRow, type TaskRow } from "@agent-continuity/database";
@@ -239,36 +240,16 @@ export function createClaimService(runtime: Runtime, activity: ActivityService, 
     },
 
     release(taskRef: string, input: ReleaseClaimInput = {}): TaskClaim {
-      return runtime.tx(() => {
-        const task = requireTask(runtime, taskRef);
-        reconcile([task.id]);
+      return releaseOwnedClaim(taskRef, input);
+    },
 
-        const existing = findActiveClaim(runtime, task.id);
-        if (!existing) {
-          throw new AgentContinuityError(
-            "TASK_NOT_CLAIMED",
-            `${task.key} has no active claim to release.`,
-            { task: task.key },
-          );
-        }
-
-        // Omitting the actor is a deliberate forced release, which the human UI offers.
-        const forced = !input.actor;
-        if (!forced && !sameOwner(existing, input.actor, input.sessionId)) {
-          throw new AgentContinuityError(
-            "TASK_CLAIM_MISMATCH",
-            `The active claim on ${task.key} belongs to ${existing.actor} and cannot be released by ${input.actor}.`,
-            { task: task.key, actor: existing.actor },
-          );
-        }
-
-        return releaseClaimRow(existing, task, {
-          reason: input.reason,
-          actor: input.actor,
-          sessionId: input.sessionId,
-          forced,
-        });
-      });
+    /** Transaction-safe composite primitive that pins the exact final checkpoint. */
+    releaseAfterCheckpoint(
+      taskRef: string,
+      input: ReleaseClaimInput,
+      checkpoint: TaskCheckpoint,
+    ): TaskClaim {
+      return releaseOwnedClaim(taskRef, input, checkpoint);
     },
 
     /** Used by task completion, which always ends the active lease. */
@@ -282,6 +263,44 @@ export function createClaimService(runtime: Runtime, activity: ActivityService, 
     },
   };
 
+  function releaseOwnedClaim(
+    taskRef: string,
+    input: ReleaseClaimInput,
+    finalCheckpoint?: TaskCheckpoint,
+  ): TaskClaim {
+    return runtime.tx(() => {
+      const task = requireTask(runtime, taskRef);
+      reconcile([task.id]);
+
+      const existing = findActiveClaim(runtime, task.id);
+      if (!existing) {
+        throw new AgentContinuityError(
+          "TASK_NOT_CLAIMED",
+          `${task.key} has no active claim to release.`,
+          { task: task.key },
+        );
+      }
+
+      // Omitting the actor is a deliberate forced release, which the human UI offers.
+      const forced = !input.actor;
+      if (!forced && !sameOwner(existing, input.actor, input.sessionId)) {
+        throw new AgentContinuityError(
+          "TASK_CLAIM_MISMATCH",
+          `The active claim on ${task.key} belongs to ${existing.actor} and cannot be released by ${input.actor}.`,
+          { task: task.key, actor: existing.actor },
+        );
+      }
+
+      return releaseClaimRow(existing, task, {
+        reason: input.reason,
+        actor: input.actor,
+        sessionId: input.sessionId,
+        forced,
+        finalCheckpoint,
+      });
+    });
+  }
+
   function releaseClaimRow(
     existing: TaskClaimRow,
     task: TaskRow,
@@ -290,6 +309,7 @@ export function createClaimService(runtime: Runtime, activity: ActivityService, 
       actor?: string | undefined;
       sessionId?: string | undefined;
       forced: boolean;
+      finalCheckpoint?: TaskCheckpoint | undefined;
     },
   ): TaskClaim {
     const now = runtime.now();
@@ -313,7 +333,12 @@ export function createClaimService(runtime: Runtime, activity: ActivityService, 
       },
     });
 
-    executions?.endForClaim(task.id, existing.id, options.reason ?? (options.forced ? "claim forcibly released" : "claim released"));
+    executions?.endForClaim(
+      task.id,
+      existing.id,
+      options.reason ?? (options.forced ? "claim forcibly released" : "claim released"),
+      options.finalCheckpoint,
+    );
     return toClaimDto(runtime, row, task.key);
   }
 }

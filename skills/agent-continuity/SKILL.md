@@ -57,12 +57,18 @@ Call `tasks_get` and read all of it:
 
 The response ends with a `Recommended state` line. Treat it as a hint, not an order.
 
-Then `tasks_claim` before beginning meaningful work. Claims are temporary leases, not
-permanent assignment; they expire (30 minutes by default) and are renewed automatically
-whenever you record real work. **Do not claim a task simply to inspect it.**
+Then prefer `start_work` before beginning meaningful work. It claims eligible work (or
+resumes your existing claim) and returns the task, project context, execution state,
+dependencies and blockers in one response. Use the exact provider session identity when
+one was supplied. If `start_work` is unavailable, use `tasks_claim` and then
+`tasks_execution_get`.
 
-If `tasks_claim` returns `TASK_ALREADY_CLAIMED`, another agent holds a live lease. Pick
-different work or ask the user, rather than forcing your way in.
+Claims are temporary leases, not permanent assignment; they expire (30 minutes by
+default) and are renewed automatically whenever you record real work. **Do not claim a
+task simply to inspect it.**
+
+If `start_work` or `tasks_claim` returns `TASK_ALREADY_CLAIMED`, another agent holds a
+live lease. Pick different work or ask the user, rather than forcing your way in.
 
 ## Execution continuity
 
@@ -70,23 +76,32 @@ Task status describes the workflow state; execution health describes whether an 
 actually alive and making progress. Do not treat an `in_progress` task as proof that its
 agent is active.
 
-- Send `tasks_heartbeat` silently while actively working. A heartbeat is liveness only:
-  do not create a progress entry or narrate it to the user.
-- Use `tasks_checkpoint` at meaningful phase boundaries and before a handoff. Include
-  what is complete, what is being worked on, the next action, and genuine uncertainty.
+- Prefer `report` while actively working. With no progress or checkpoint it is a silent
+  heartbeat; with either it atomically renews the lease and records the meaningful state.
+  If `report` is unavailable, use `tasks_heartbeat`, `tasks_add_progress` and
+  `tasks_checkpoint` as the corresponding atomic fallbacks.
+- Record a checkpoint through `report` at meaningful phase boundaries. Include what is
+  complete, what is being worked on, the next action, and genuine uncertainty.
 - Use `tasks_work_plan` for an ordered implementation checklist. Mark one phase active
   and complete phases as work advances. A work plan explains *how* work proceeds;
   acceptance criteria explain *what proves it is done*.
 - Use `tasks_execution_get` after taking over work, to read the latest execution,
   checkpoints, work plan, and handoff before changing anything.
+- When an execution has an explicit repository/worktree binding, use
+  `tasks_path_ownership_set` to declare the exact files and directory prefixes you
+  expect to edit. Read `tasks_path_ownership_get` before expanding scope. Collision
+  warnings are coordination advisories: contact the named execution or isolate the
+  work in a separate worktree, but do not treat a warning as a failed claim.
 - Attach proof to individual criteria with `tasks_add_criterion_evidence` as tests,
   files, results, or links become available. Do not wait until final completion.
-- Use `attention_list` to find stale claims, interrupted executions, blockers, review
-  work, and handoffs requiring action.
+- Use `attention_list` on demand when this conversation is resuming, selecting, or
+  managing tracked work. Do not retrieve attention merely because a session opened;
+  unrelated conversations must not inherit workspace-wide state.
 
 ## Progress
 
-Use `tasks_add_progress` for meaningful milestones.
+Use `report` with `progress` for meaningful milestones. If the composite is unavailable,
+use `tasks_add_progress`.
 
 Good:
 
@@ -121,7 +136,15 @@ Rules:
 - Do not use context as an activity log. That is what progress and activity are for.
 - Do not copy whole conversations into context.
 - Update context when your current working knowledge changes materially.
-- Both tools replace the stored value, so include what should be kept.
+- Both tools replace the current value and require the current context version as
+  `expected_version`, so include everything that should be kept. Read the owner first,
+  and if `CONTEXT_VERSION_CONFLICT` occurs, re-read and reconcile instead of retrying.
+- Every replacement is immutable history. Use `projects_context_history` /
+  `tasks_context_history` for bounded metadata and the targeted version-get tool only
+  when old content is needed. Revert appends a new version; it never deletes history.
+- Above 32 KiB UTF-8, context carries a soft bloat warning. Compact only by writing a
+  shorter agent/user-authored replacement with an explicit reason. Never algorithmically
+  summarize or destructively rewrite context.
 
 ## Decisions
 
@@ -175,24 +198,26 @@ the handover.
 
 Before ending work on an incomplete claimed task:
 
-1. Record a `tasks_checkpoint` with completed work, current work, next action and uncertainty.
-2. Update task context if a future agent needs new working knowledge.
-3. Record significant decisions.
-4. Record blockers.
-5. Call `tasks_release_claim` when the session is ending and no immediate continuation
-   is expected.
+1. Update task context if a future agent needs new working knowledge.
+2. Record significant decisions.
+3. Record blockers.
+4. Prefer `handoff`, which records the final checkpoint and safely releases the claim in
+   one operation.
+5. If `handoff` is unavailable, use `tasks_checkpoint` followed by
+   `tasks_release_claim`.
 
 ## Tools
 
 | Purpose | Tool |
 | --- | --- |
 | Find or create projects | `projects_list`, `projects_get`, `projects_create`, `projects_bootstrap` |
-| Project memory | `projects_update_context`, `projects_update` |
+| Project memory | `projects_update_context`, `projects_context_history`, `projects_context_version_get`, `projects_context_revert` |
 | Find work | `tasks_list`, `tasks_get` |
-| Manage work | `tasks_create`, `tasks_update`, `tasks_update_context` |
-| Leases | `tasks_claim`, `tasks_release_claim` |
-| Execution continuity | `tasks_heartbeat`, `tasks_execution_get`, `tasks_checkpoint`, `tasks_work_plan` |
-| Record work | `tasks_add_progress`, `tasks_add_acceptance_criteria`, `tasks_update_acceptance_criteria`, `tasks_complete` |
+| Manage work | `tasks_create`, `tasks_update`, `tasks_update_context`, `tasks_context_history`, `tasks_context_version_get`, `tasks_context_revert` |
+| Preferred lifecycle | `start_work`, `report`, `handoff` |
+| Atomic lifecycle fallbacks (full profile) | `tasks_claim`, `tasks_release_claim`, `tasks_heartbeat`, `tasks_checkpoint`, `tasks_add_progress` |
+| Execution continuity | `tasks_execution_get`, `tasks_work_plan`, `tasks_path_ownership_get`, `tasks_path_ownership_set` |
+| Record work | `report`, `tasks_add_acceptance_criteria`, `tasks_update_acceptance_criteria`, `tasks_complete` |
 | Proof | `tasks_add_criterion_evidence` |
 | Obstacles | `tasks_add_blocker`, `tasks_resolve_blocker` |
 | Ordering | `tasks_add_dependency`, `tasks_remove_dependency` |
@@ -202,7 +227,13 @@ Before ending work on an incomplete claimed task:
 | Attention | `attention_list` |
 
 Always pass `actor` (your agent name, e.g. `claude-code`) and `session_id` so claims,
-progress and decisions are attributable and your lease renews correctly.
+progress and decisions are attributable and your lease renews correctly. When a
+lifecycle integration supplies the provider's Agent Continuity session identity, use
+that exact value rather than inventing a descriptive session id.
+
+The optional MCP `agent` profile supports the complete non-destructive workflow above.
+Use the default `full` profile for destructive administration, repository maintenance, or
+the redundant atomic lifecycle controls.
 
 If the MCP tools are unavailable, the same operations exist on the `ac` CLI, and every
 read command supports `--json`:

@@ -97,9 +97,9 @@ Use:
 * Drizzle ORM
 * SQLite
 
-Recommended SQLite driver:
+SQLite driver:
 
-* better-sqlite3
+* Node's built-in synchronous `node:sqlite` module (Node.js 24+)
 
 The backend must own all business rules.
 

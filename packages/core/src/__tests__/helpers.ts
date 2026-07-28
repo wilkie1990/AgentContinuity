@@ -16,6 +16,20 @@ export function expectErrorCode(fn: () => unknown, code: ErrorCode): AgentContin
   throw new Error(`Expected an AgentContinuityError with code ${code}, but nothing was thrown.`);
 }
 
+export async function expectErrorCodeAsync(
+  fn: () => Promise<unknown>,
+  code: ErrorCode,
+): Promise<AgentContinuityError> {
+  try {
+    await fn();
+  } catch (error) {
+    if (!AgentContinuityError.is(error)) throw error;
+    expect(error.code).toBe(code);
+    return error;
+  }
+  throw new Error(`Expected an AgentContinuityError with code ${code}, but nothing was thrown.`);
+}
+
 export function seedProject(workspace: TestWorkspace, name = "Agent Continuity") {
   return workspace.projects.create({ name, objective: "Prove the workspace model", actor: "codex" });
 }

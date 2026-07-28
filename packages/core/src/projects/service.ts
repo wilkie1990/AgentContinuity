@@ -18,8 +18,10 @@ import {
   activityEvents,
   blockers,
   decisions,
+  executionWorktrees,
   links,
   projects,
+  repositories,
   taskClaims,
   taskDependencies,
   taskProgress,
@@ -31,12 +33,13 @@ import { and, asc, desc, eq, inArray, like, or, sql, type SQL } from "drizzle-or
 import type { AnySQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import type { ActivityService } from "../activity/service.js";
 import type { ClaimService } from "../claims/service.js";
+import type { ContextService } from "../context/service.js";
 import type { DecisionService } from "../decisions/service.js";
 import { nextKey } from "../ids.js";
 import type { LinkService } from "../links/service.js";
 import { queryLinks } from "../links/repository.js";
 import { queryDecisions } from "../decisions/repository.js";
-import { requireProject, requireWritableProject } from "../refs.js";
+import { requireProject } from "../refs.js";
 import type { Runtime } from "../runtime.js";
 import { addDependency } from "../tasks/dependencies.js";
 import type { TaskService } from "../tasks/service.js";
@@ -47,6 +50,7 @@ export type ProjectService = ReturnType<typeof createProjectService>;
 export function createProjectService(
   runtime: Runtime,
   activity: ActivityService,
+  contexts: ContextService,
   taskService: TaskService,
   claims: ClaimService,
   decisionService: DecisionService,
@@ -59,7 +63,7 @@ export function createProjectService(
   function createProject(input: CreateProjectInput): ProjectSummary {
     return runtime.tx(() => {
       const now = runtime.now();
-      const row = runtime.db
+      const inserted = runtime.db
         .insert(projects)
         .values({
           id: runtime.newId(),
@@ -74,6 +78,11 @@ export function createProjectService(
         })
         .returning()
         .get();
+      const row = contexts.initialiseProject(inserted, {
+        actor: input.actor,
+        sessionId: input.sessionId,
+        reason: "Initial project context.",
+      });
 
       activity.record({
         projectId: row.id,
@@ -202,28 +211,7 @@ export function createProjectService(
     },
 
     updateContext(projectRef: string, input: UpdateProjectContextInput): ProjectSummary {
-      return runtime.tx(() => {
-        const project = requireWritableProject(runtime, projectRef);
-        const previous = project.context ?? "";
-
-        const updated = runtime.db
-          .update(projects)
-          .set({ context: input.context, updatedAt: runtime.now() })
-          .where(eq(projects.id, project.id))
-          .returning()
-          .get();
-
-        activity.record({
-          projectId: project.id,
-          eventType: "project.context_updated",
-          actor: input.actor,
-          sessionId: input.sessionId,
-          // Lengths only, so activity never duplicates a large context value.
-          payload: { previousLength: previous.length, newLength: input.context.length },
-        });
-
-        return summarise(updated);
-      });
+      return summarise(contexts.replaceProject(projectRef, input));
     },
 
     archive(projectRef: string, input: ArchiveProjectInput = {}): ProjectSummary {
@@ -277,6 +265,12 @@ export function createProjectService(
           .where(eq(tasks.projectId, project.id))
           .all()
           .map((row) => row.id);
+        const repositoryIds = runtime.db
+          .select({ id: repositories.id })
+          .from(repositories)
+          .where(eq(repositories.projectId, project.id))
+          .all()
+          .map((row) => row.id);
 
         if (taskIds.length > 0) {
           const activeClaims = claims.activeForMany(taskIds);
@@ -323,6 +317,12 @@ export function createProjectService(
           decisions: countForProject(decisions, decisions.projectId),
           links: countForProject(links, links.projectId),
           activityEvents: countForProject(activityEvents, activityEvents.projectId),
+          repositories: repositoryIds.length,
+          executionWorktrees: countWhereIn(
+            executionWorktrees,
+            executionWorktrees.repositoryId,
+            repositoryIds,
+          ),
         };
 
         const summary: DeletedProject = {

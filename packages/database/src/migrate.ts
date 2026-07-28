@@ -1,7 +1,7 @@
-import type BetterSqlite3 from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -13,15 +13,28 @@ export function migrationsDir(): string {
 
 export type AppliedMigration = { name: string; checksum: string; appliedAt: string };
 
+type AppliedMigrationRow = Pick<AppliedMigration, "name" | "checksum">;
+
 function checksum(contents: string): string {
   return createHash("sha256").update(contents).digest("hex").slice(0, 16);
+}
+
+function isAppliedMigrationRow(row: unknown): row is AppliedMigrationRow {
+  return (
+    typeof row === "object" &&
+    row !== null &&
+    "name" in row &&
+    typeof row.name === "string" &&
+    "checksum" in row &&
+    typeof row.checksum === "string"
+  );
 }
 
 /**
  * Applies every not-yet-applied `.sql` file in `migrations/`, in filename order,
  * inside a single transaction per migration.
  */
-export function runMigrations(sqlite: BetterSqlite3.Database, directory = migrationsDir()): string[] {
+export function runMigrations(sqlite: DatabaseSync, directory = migrationsDir()): string[] {
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS _migrations (
       name       TEXT PRIMARY KEY,
@@ -35,8 +48,10 @@ export function runMigrations(sqlite: BetterSqlite3.Database, directory = migrat
       .prepare("SELECT name, checksum FROM _migrations")
       .all()
       .map((row) => {
-        const typed = row as { name: string; checksum: string };
-        return [typed.name, typed.checksum] as const;
+        if (!isAppliedMigrationRow(row)) {
+          throw new Error("Invalid row found in _migrations.");
+        }
+        return [row.name, row.checksum] as const;
       }),
   );
 

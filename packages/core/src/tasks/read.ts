@@ -22,6 +22,7 @@ import { toClaimDto } from "../claims/repository.js";
 import type { ClaimService } from "../claims/service.js";
 import type { ExecutionService } from "../executions/service.js";
 import type { Runtime } from "../runtime.js";
+import { measureContext } from "../context/size.js";
 
 export type CriteriaCount = { total: number; completed: number };
 
@@ -203,6 +204,8 @@ export function toTaskSummary(
     title: row.title,
     description: row.description,
     context: row.context,
+    contextVersion: row.contextVersion,
+    contextSize: measureContext(row.context),
     status: row.status as TaskStatus,
     priority: row.priority as TaskPriority,
     sortOrder: row.sortOrder,

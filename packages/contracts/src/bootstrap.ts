@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { actorFields, metadataSchema, nullableText, withSnakeCaseAliases } from "./common.js";
+import { nullableContextContentSchema } from "./context.js";
 import { taskPrioritySchema, taskStatusSchema } from "./enums.js";
 
 /** A temporary reference used only inside a bootstrap request, e.g. "task-model". */
@@ -27,7 +28,7 @@ export const bootstrapTaskSchema = z.strictObject({
   ref: bootstrapRefSchema.optional().describe("Temporary reference used by dependsOn"),
   title: z.string().min(1).max(300),
   description: nullableText,
-  context: nullableText,
+  context: nullableContextContentSchema.optional(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   acceptanceCriteria: z.array(z.string().min(1).max(2000)).optional(),
@@ -58,7 +59,7 @@ const bootstrapProjectObject = z.strictObject({
   name: z.string().min(1).max(200),
   objective: nullableText,
   description: nullableText,
-  context: nullableText,
+  context: nullableContextContentSchema.optional(),
   tasks: z.array(taskInput).max(500).optional(),
   decisions: z.array(decisionInput).max(200).optional(),
   links: z.array(linkInput).max(200).optional(),

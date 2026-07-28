@@ -1,26 +1,38 @@
 import {
   AgentContinuityError,
+  criterionEvidenceSchema,
+  searchSourceTypeSchema,
   taskPrioritySchema,
   taskStatusSchema,
+  workflowCheckpointSchema,
   type ProjectStatus,
 } from "@agent-continuity/contracts";
 import type { Workspace } from "@agent-continuity/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { profileGuidance, toolIsInProfile, type McpProfile } from "./profile.js";
 import {
   renderActivityLine,
   renderAttention,
   renderCheckpoints,
+  renderContextHistory,
+  renderContextSize,
+  renderContextVersion,
   renderCriteria,
   renderDecisionLine,
+  renderGitProvenance,
   renderLinkLine,
+  renderPathOwnership,
   renderProjectDetail,
   renderProjectList,
   renderProjectLine,
+  renderRepository,
+  renderSearchResults,
   renderTaskDetail,
   renderTaskList,
   renderTaskLine,
   renderWorkPlan,
+  renderWorktree,
 } from "./format.js";
 
 type ToolResult = {
@@ -39,6 +51,18 @@ function text(body: string): ToolResult {
 function guard(handler: () => string): ToolResult {
   try {
     return text(handler());
+  } catch (error) {
+    if (AgentContinuityError.is(error)) {
+      const details = Object.keys(error.details).length > 0 ? `\n${JSON.stringify(error.details)}` : "";
+      return { content: [{ type: "text", text: `${error.code}: ${error.message}${details}` }], isError: true };
+    }
+    throw error;
+  }
+}
+
+async function guardAsync(handler: () => string | Promise<string>): Promise<ToolResult> {
+  try {
+    return text(await handler());
   } catch (error) {
     if (AgentContinuityError.is(error)) {
       const details = Object.keys(error.details).length > 0 ? `\n${JSON.stringify(error.details)}` : "";
@@ -68,7 +92,63 @@ const bootstrapLinkShape = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-export function registerTools(server: McpServer, workspace: Workspace): void {
+function serverForProfile(server: McpServer, profile: McpProfile): McpServer {
+  return new Proxy(server, {
+    get(target, property, receiver) {
+      if (property !== "registerTool") return Reflect.get(target, property, receiver);
+      return (name: string, ...args: unknown[]) => {
+        // Full is intentionally unfiltered so a newly registered typed tool cannot
+        // disappear merely because the declarative catalog was not updated. The
+        // full-surface parity test will then fail and force the catalog/docs to follow.
+        if (profile !== "full" && !toolIsInProfile(profile, name)) return undefined;
+        return (target.registerTool as (...values: unknown[]) => unknown)(name, ...args);
+      };
+    },
+  });
+}
+
+export function registerTools(mcpServer: McpServer, workspace: Workspace, profile: McpProfile = "full"): void {
+  const server = serverForProfile(mcpServer, profile);
+
+  server.registerTool(
+    "profile_info",
+    {
+      title: "Inspect MCP profile",
+      description:
+        "Show the active MCP profile and how to reach named operations that are unavailable in a reduced profile.",
+      inputSchema: {},
+    },
+    () => text(profileGuidance(profile)),
+  );
+
+  server.registerTool(
+    "search",
+    {
+      title: "Search workspace",
+      description:
+        "Search projects, tasks, separate contexts, acceptance criteria, progress, decisions, blockers, criterion evidence, links and activity with optional project/task/type filters.",
+      inputSchema: {
+        query: z.string().min(1).max(500),
+        project: z.string().optional(),
+        task: z.string().optional(),
+        type: z.array(searchSourceTypeSchema).max(11).optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderSearchResults(
+          workspace.search.search({
+            q: input.query,
+            ...(input.project ? { project: input.project } : {}),
+            ...(input.task ? { task: input.task } : {}),
+            ...(input.type ? { type: input.type } : {}),
+            limit: input.limit,
+          }),
+        ),
+      ),
+  );
+
   // ---------------------------------------------------------------- projects
 
   server.registerTool(
@@ -86,7 +166,7 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       },
     },
     (input) =>
-      guard(() => {
+      guardAsync(async () => {
         const project = workspace.projects.create({
           name: input.name,
           objective: input.objective ?? null,
@@ -258,15 +338,90 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       title: "Update project context",
       description:
         "Replace the persistent project context: knowledge future agents need anywhere in this project, such as constraints, scope boundaries, architecture and user preferences. Do not use it as an activity log and do not paste conversations into it.",
-      inputSchema: { project: z.string(), context: z.string(), ...actorShape },
+      inputSchema: {
+        project: z.string(),
+        context: z.string().nullable(),
+        expected_version: z.number().int().min(0),
+        reason: z.string().min(1).max(2000).optional(),
+        ...actorShape,
+      },
     },
     (input) =>
       guard(() => {
         const project = workspace.projects.updateContext(input.project, {
           context: input.context,
+          expectedVersion: input.expected_version,
+          ...(input.reason ? { reason: input.reason } : {}),
           ...meta(input),
         });
-        return `Updated context for ${project.key} (${input.context.length} characters).`;
+        return `Updated context for ${project.key} to v${project.contextVersion} (${renderContextSize(
+          project.contextSize,
+        )}).`;
+      }),
+  );
+
+  server.registerTool(
+    "projects_context_history",
+    {
+      title: "List project context history",
+      description:
+        "List bounded immutable project-context version metadata without returning historical content.",
+      inputSchema: {
+        project: z.string(),
+        limit: z.number().int().min(1).max(100).default(20),
+        before_version: z.number().int().min(1).optional(),
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderContextHistory(
+          workspace.contexts.listProject(input.project, {
+            limit: input.limit,
+            ...(input.before_version ? { beforeVersion: input.before_version } : {}),
+          }),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "projects_context_version_get",
+    {
+      title: "Get project context version",
+      description: "Get the full content and metadata of one project-context version.",
+      inputSchema: { project: z.string(), version: z.number().int().min(1) },
+    },
+    (input) =>
+      guard(() =>
+        renderContextVersion(workspace.contexts.getProject(input.project, input.version)),
+      ),
+  );
+
+  server.registerTool(
+    "projects_context_revert",
+    {
+      title: "Revert project context",
+      description:
+        "Append a new current project-context version by copying a historical version. Later history is preserved.",
+      inputSchema: {
+        project: z.string(),
+        target_version: z.number().int().min(1),
+        expected_version: z.number().int().min(0),
+        reason: z.string().min(1).max(2000).optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() => {
+        const row = workspace.contexts.revertProject(input.project, {
+          targetVersion: input.target_version,
+          expectedVersion: input.expected_version,
+          ...(input.reason ? { reason: input.reason } : {}),
+          ...meta(input),
+        });
+        const project = workspace.projects.summarise(row);
+        return `Reverted ${project.key} context as v${project.contextVersion} (${renderContextSize(
+          project.contextSize,
+        )}).`;
       }),
   );
 
@@ -294,8 +449,121 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
         const { removed } = deleted;
         return [
           `Deleted ${deleted.key} — ${deleted.name}.`,
-          `Removed ${removed.tasks} tasks, ${removed.acceptanceCriteria} acceptance criteria, ${removed.progress} progress entries, ${removed.blockers} blockers, ${removed.claims} claims, ${removed.dependencies} dependencies, ${removed.decisions} decisions, ${removed.links} links and ${removed.activityEvents} activity events.`,
+          `Removed ${removed.tasks} tasks, ${removed.acceptanceCriteria} acceptance criteria, ${removed.progress} progress entries, ${removed.blockers} blockers, ${removed.claims} claims, ${removed.dependencies} dependencies, ${removed.decisions} decisions, ${removed.links} links, ${removed.repositories} repositories, ${removed.executionWorktrees} execution worktrees and ${removed.activityEvents} activity events.`,
         ].join("\n");
+      }),
+  );
+
+  server.registerTool(
+    "repositories_add",
+    {
+      title: "Associate project repository",
+      description:
+        "Associate a project with an explicit absolute local repository root. The path is canonicalized and never inferred from process cwd.",
+      inputSchema: {
+        project: z.string(),
+        label: z.string().min(1).max(200),
+        root_path: z.string().min(1),
+        remote_url: z.string().nullable().optional(),
+        primary: z.boolean().optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderRepository(
+          workspace.repositories.create(input.project, {
+            label: input.label,
+            rootPath: input.root_path,
+            ...(input.remote_url !== undefined ? { remoteUrl: input.remote_url } : {}),
+            ...(input.primary !== undefined ? { primary: input.primary } : {}),
+            ...meta(input),
+          }),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "repositories_list",
+    {
+      title: "List project repositories",
+      description:
+        "List explicit local repository associations and their current availability. This explicit operation returns machine-local paths.",
+      inputSchema: { project: z.string() },
+    },
+    (input) =>
+      guard(() => {
+        const repositories = workspace.repositories.list(input.project);
+        return repositories.length
+          ? repositories.map(renderRepository).join("\n\n")
+          : "No repositories associated.";
+      }),
+  );
+
+  server.registerTool(
+    "repositories_get",
+    {
+      title: "Get project repository",
+      description:
+        "Get one explicit local repository association, including its machine-local canonical path and availability.",
+      inputSchema: { project: z.string(), repository: z.string() },
+    },
+    (input) =>
+      guard(() =>
+        renderRepository(workspace.repositories.get(input.project, input.repository)),
+      ),
+  );
+
+  server.registerTool(
+    "repositories_update",
+    {
+      title: "Update project repository",
+      description:
+        "Update repository label, canonical root, remote metadata or transfer primary selection.",
+      inputSchema: {
+        project: z.string(),
+        repository: z.string(),
+        label: z.string().min(1).max(200).optional(),
+        root_path: z.string().min(1).optional(),
+        remote_url: z.string().nullable().optional(),
+        primary: z.literal(true).optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderRepository(
+          workspace.repositories.update(input.project, input.repository, {
+            ...(input.label !== undefined ? { label: input.label } : {}),
+            ...(input.root_path !== undefined ? { rootPath: input.root_path } : {}),
+            ...(input.remote_url !== undefined ? { remoteUrl: input.remote_url } : {}),
+            ...(input.primary ? { primary: true } : {}),
+            ...meta(input),
+          }),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "repositories_remove",
+    {
+      title: "Remove project repository",
+      description:
+        "Remove an explicit repository association. Running execution bindings always block removal; force only permits explicit cleanup of ended-execution bindings.",
+      inputSchema: {
+        project: z.string(),
+        repository: z.string(),
+        force: z.boolean().optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() => {
+        const removed = workspace.repositories.remove(input.project, input.repository, {
+          force: input.force ?? false,
+          ...meta(input),
+        });
+        return `Removed ${removed.key} — ${removed.label}; removed ${removed.removedWorktreeBindings} ended worktree binding(s).`;
       }),
   );
 
@@ -422,15 +690,247 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       title: "Update task context",
       description:
         "Replace the persistent task context: knowledge a future agent needs specifically to complete this task, such as prior reasoning, constraints and rejected approaches. Do not use it as a progress log.",
-      inputSchema: { task: z.string(), context: z.string(), ...actorShape },
+      inputSchema: {
+        task: z.string(),
+        context: z.string().nullable(),
+        expected_version: z.number().int().min(0),
+        reason: z.string().min(1).max(2000).optional(),
+        ...actorShape,
+      },
     },
     (input) =>
       guard(() => {
         const task = workspace.tasks.updateContext(input.task, {
           context: input.context,
+          expectedVersion: input.expected_version,
+          ...(input.reason ? { reason: input.reason } : {}),
           ...meta(input),
         });
-        return `Updated context for ${task.key} (${input.context.length} characters).`;
+        return `Updated context for ${task.key} to v${task.contextVersion} (${renderContextSize(
+          task.contextSize,
+        )}).`;
+      }),
+  );
+
+  server.registerTool(
+    "tasks_context_history",
+    {
+      title: "List task context history",
+      description:
+        "List bounded immutable task-context version metadata without returning historical content.",
+      inputSchema: {
+        task: z.string(),
+        limit: z.number().int().min(1).max(100).default(20),
+        before_version: z.number().int().min(1).optional(),
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderContextHistory(
+          workspace.contexts.listTask(input.task, {
+            limit: input.limit,
+            ...(input.before_version ? { beforeVersion: input.before_version } : {}),
+          }),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "tasks_context_version_get",
+    {
+      title: "Get task context version",
+      description: "Get the full content and metadata of one task-context version.",
+      inputSchema: { task: z.string(), version: z.number().int().min(1) },
+    },
+    (input) =>
+      guard(() => renderContextVersion(workspace.contexts.getTask(input.task, input.version))),
+  );
+
+  server.registerTool(
+    "tasks_context_revert",
+    {
+      title: "Revert task context",
+      description:
+        "Append a new current task-context version by copying a historical version. Later history is preserved.",
+      inputSchema: {
+        task: z.string(),
+        target_version: z.number().int().min(1),
+        expected_version: z.number().int().min(0),
+        reason: z.string().min(1).max(2000).optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() => {
+        const row = workspace.contexts.revertTask(input.task, {
+          targetVersion: input.target_version,
+          expectedVersion: input.expected_version,
+          ...(input.reason ? { reason: input.reason } : {}),
+          ...meta(input),
+        });
+        const task = workspace.tasks.getSummary(row.id);
+        return `Reverted ${task.key} context as v${task.contextVersion} (${renderContextSize(
+          task.contextSize,
+        )}).`;
+      }),
+  );
+
+  server.registerTool(
+    "start_work",
+    {
+      title: "Start or resume task work",
+      description:
+        "Atomically claim eligible work (or resume your own live claim) and return project context, full task state, dependencies, blockers and execution resume state in one response.",
+      inputSchema: {
+        task: z.string(),
+        actor: z.string().min(1).max(120),
+        session_id: z.string().min(1).max(200),
+        ttl_minutes: z.number().int().min(1).max(1440).optional(),
+        worktree: z
+          .object({
+            repository: z.string().min(1),
+            worktree_path: z.string().min(1),
+            branch: z.string().nullable().optional(),
+          })
+          .strict()
+          .optional(),
+      },
+    },
+    (input) =>
+      guardAsync(async () => {
+        const result = await workspace.workflows.startWork(input.task, {
+          actor: input.actor,
+          sessionId: input.session_id,
+          ...(input.ttl_minutes ? { ttlMinutes: input.ttl_minutes } : {}),
+          ...(input.worktree
+            ? {
+                worktree: {
+                  repository: input.worktree.repository,
+                  worktreePath: input.worktree.worktree_path,
+                  ...(input.worktree.branch !== undefined
+                    ? { branch: input.worktree.branch }
+                    : {}),
+                },
+              }
+            : {}),
+        });
+        return [
+          "Work started.",
+          "",
+          renderProjectDetail(result.project),
+          "",
+          renderTaskDetail(result.task),
+          "",
+          `Resume state: ${result.execution.handoff ? `${result.execution.handoff.summary}${result.execution.handoff.nextAction ? `; next: ${result.execution.handoff.nextAction}` : ""}` : "new execution"}`,
+          `Checkpoints:\n${renderCheckpoints(result.execution.checkpoints).join("\n") || "none"}`,
+          `Work plan:\n${renderWorkPlan(result.execution.workPlan).join("\n") || "none"}`,
+        ].join("\n");
+      }),
+  );
+
+  server.registerTool(
+    "report",
+    {
+      title: "Report task execution state",
+      description:
+        "Refresh liveness and optionally record the current phase, one meaningful progress milestone and one checkpoint in a single transaction. Passing only actor/session/phase is a silent heartbeat.",
+      inputSchema: {
+        task: z.string(),
+        actor: z.string().min(1).max(120),
+        session_id: z.string().min(1).max(200),
+        phase: z.string().min(1).max(500).optional(),
+        progress: z.string().min(1).max(20_000).optional(),
+        checkpoint: z
+          .object({
+            completed: workflowCheckpointSchema.shape.completed,
+            working_on: workflowCheckpointSchema.shape.workingOn,
+            next: workflowCheckpointSchema.shape.next,
+            uncertainty: workflowCheckpointSchema.shape.uncertainty,
+          })
+          .strict()
+          .optional(),
+      },
+    },
+    (input) =>
+      guardAsync(async () => {
+        const result = await workspace.workflows.report(input.task, {
+          actor: input.actor,
+          sessionId: input.session_id,
+          ...(input.phase ? { phase: input.phase } : {}),
+          ...(input.progress ? { progress: input.progress } : {}),
+          ...(input.checkpoint
+            ? {
+                checkpoint: {
+                  completed: input.checkpoint.completed,
+                  workingOn: input.checkpoint.working_on,
+                  next: input.checkpoint.next,
+                  ...(input.checkpoint.uncertainty !== undefined
+                    ? { uncertainty: input.checkpoint.uncertainty }
+                    : {}),
+                },
+              }
+            : {}),
+        });
+        return [
+          `Report recorded for ${result.claim.taskKey}.`,
+          `Execution: ${result.execution.health}${result.execution.currentPhase ? ` — ${result.execution.currentPhase}` : ""}`,
+          `Progress: ${result.progress?.content ?? "none (liveness only)"}`,
+          `Checkpoint: ${result.checkpoint ? `next: ${result.checkpoint.next}` : "none"}`,
+          result.provenance
+            ? `Git: ${result.provenance.status} — ${result.provenance.filesChanged} touched paths`
+            : "Git: not captured",
+        ].join("\n");
+      }),
+  );
+
+  server.registerTool(
+    "handoff",
+    {
+      title: "Hand off task execution",
+      description:
+        "Atomically validate claim ownership, record a final checkpoint, produce durable resume information and release the claim.",
+      inputSchema: {
+        task: z.string(),
+        actor: z.string().min(1).max(120),
+        session_id: z.string().min(1).max(200),
+        reason: z.string().min(1).max(2_000).optional(),
+        phase: z.string().min(1).max(500).optional(),
+        checkpoint: z
+          .object({
+            completed: workflowCheckpointSchema.shape.completed,
+            working_on: workflowCheckpointSchema.shape.workingOn,
+            next: workflowCheckpointSchema.shape.next,
+            uncertainty: workflowCheckpointSchema.shape.uncertainty,
+          })
+          .strict(),
+      },
+    },
+    (input) =>
+      guardAsync(async () => {
+        const result = await workspace.workflows.handoff(input.task, {
+          actor: input.actor,
+          sessionId: input.session_id,
+          reason: input.reason ?? "handoff",
+          ...(input.phase ? { phase: input.phase } : {}),
+          checkpoint: {
+            completed: input.checkpoint.completed,
+            workingOn: input.checkpoint.working_on,
+            next: input.checkpoint.next,
+            ...(input.checkpoint.uncertainty !== undefined
+              ? { uncertainty: input.checkpoint.uncertainty }
+              : {}),
+          },
+        });
+        return [
+          `Handed off ${result.releasedClaim.taskKey}.`,
+          result.handoff.summary,
+          `Next: ${result.handoff.nextAction ?? "none"}`,
+          `Unresolved: ${result.handoff.unresolved.join("; ") || "none"}`,
+          result.provenance
+            ? `Git: ${result.provenance.status} — ${result.provenance.filesChanged} touched paths`
+            : "Git: not captured",
+          "Claim released safely.",
+        ].join("\n");
       }),
   );
 
@@ -502,11 +1002,132 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       const state = workspace.executions.forTask(input.task);
       return [
         `Execution: ${state.execution ? `${state.execution.actor} — ${state.execution.health}` : "none"}`,
+        `Worktree: ${
+          state.execution?.worktree
+            ? `${state.execution.worktree.repositoryKey}${
+                state.execution.worktree.branch
+                  ? ` (${state.execution.worktree.branch})`
+                  : ""
+              } — ${state.execution.worktree.availability.status}`
+            : "unbound"
+        }`,
         `Checkpoints:\n${renderCheckpoints(state.checkpoints).join("\n") || "none"}`,
         `Work plan:\n${renderWorkPlan(state.workPlan).join("\n") || "none"}`,
         `Handoff: ${state.handoff ? `${state.handoff.summary}${state.handoff.nextAction ? `; next: ${state.handoff.nextAction}` : ""}` : "none"}`,
+        renderGitProvenance(state.provenance),
+        renderPathOwnership(state.ownership, state.collisions),
       ].join("\n");
     }),
+  );
+
+  server.registerTool(
+    "tasks_worktree_get",
+    {
+      title: "Get execution worktree",
+      description:
+        "Read the running execution's explicit repository/worktree binding, including its machine-local path.",
+      inputSchema: { task: z.string() },
+    },
+    (input) => guard(() => renderWorktree(workspace.repositories.worktree(input.task))),
+  );
+
+  server.registerTool(
+    "tasks_path_ownership_get",
+    {
+      title: "Get execution path ownership",
+      description:
+        "Read the current execution's repository-relative path declarations and derived live collision advisories. Advisories coordinate agents but never block claims.",
+      inputSchema: { task: z.string() },
+    },
+    (input) =>
+      guard(() =>
+        renderPathOwnership(
+          workspace.ownership.forTask(input.task),
+          workspace.ownership.collisionsForTask(input.task),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "tasks_path_ownership_set",
+    {
+      title: "Replace execution path ownership",
+      description:
+        "Replace the running execution's exact repository-relative file and directory declarations. Paths are versioned and scoped to the explicitly bound repository/worktree; globs, absolute paths and traversal are rejected.",
+      inputSchema: {
+        task: z.string(),
+        paths: z
+          .array(
+            z.object({
+              path: z.string().min(1),
+              kind: z.enum(["file", "directory"]),
+            }),
+          )
+          .max(500),
+        actor: z.string().min(1),
+        session_id: z.string().optional(),
+      },
+    },
+    (input) =>
+      guard(() => {
+        const result = workspace.ownership.replace(input.task, {
+          paths: input.paths,
+          actor: input.actor,
+          ...(input.session_id ? { sessionId: input.session_id } : {}),
+        });
+        return renderPathOwnership(result.ownership, result.collisions);
+      }),
+  );
+
+  server.registerTool(
+    "tasks_worktree_bind",
+    {
+      title: "Bind execution worktree",
+      description:
+        "Bind a claimed task's running execution to an explicit project repository, absolute worktree path and optional branch. No value is inferred from cwd.",
+      inputSchema: {
+        task: z.string(),
+        repository: z.string(),
+        worktree_path: z.string().min(1),
+        branch: z.string().nullable().optional(),
+        actor: z.string().min(1),
+        session_id: z.string().optional(),
+      },
+    },
+    (input) =>
+      guardAsync(async () => {
+        const worktree = workspace.repositories.bindWorktree(input.task, {
+            repository: input.repository,
+            worktreePath: input.worktree_path,
+            ...(input.branch !== undefined ? { branch: input.branch } : {}),
+            actor: input.actor,
+            ...(input.session_id ? { sessionId: input.session_id } : {}),
+          });
+        await workspace.git.captureBaseline(input.task, worktree.executionId);
+        return renderWorktree(worktree);
+      }),
+  );
+
+  server.registerTool(
+    "tasks_worktree_unbind",
+    {
+      title: "Unbind execution worktree",
+      description: "Detach the explicit worktree from the running execution.",
+      inputSchema: {
+        task: z.string(),
+        actor: z.string().min(1),
+        session_id: z.string().optional(),
+      },
+    },
+    (input) =>
+      guard(() =>
+        renderWorktree(
+          workspace.repositories.unbindWorktree(input.task, {
+            actor: input.actor,
+            ...(input.session_id ? { sessionId: input.session_id } : {}),
+          }),
+        ),
+      ),
   );
 
   server.registerTool(
@@ -516,10 +1137,51 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       description: "Record what is completed, what is being worked on, and the next action at a phase boundary or before handoff. Do not use for routine command-by-command narration.",
       inputSchema: { task: z.string(), completed: z.string().min(1), working_on: z.string().min(1), next: z.string().min(1), uncertainty: z.string().nullable().optional(), ...actorShape },
     },
-    (input) => guard(() => {
+    (input) => guardAsync(async () => {
       const checkpoint = workspace.executions.checkpoint(input.task, { completed: input.completed, workingOn: input.working_on, next: input.next, ...(input.uncertainty !== undefined ? { uncertainty: input.uncertainty } : {}), ...meta(input) });
-      return `Checkpoint recorded for ${checkpoint.taskId}.`;
+      const provenance = checkpoint.executionId
+        ? await workspace.git.captureSnapshot(input.task, {
+            trigger: "checkpoint",
+            checkpointId: checkpoint.id,
+            executionId: checkpoint.executionId,
+          })
+        : null;
+      const collisions = workspace.ownership.collisionsForTask(input.task);
+      return `Checkpoint recorded for ${checkpoint.taskId}.${provenance ? ` Git snapshot: ${provenance.status}.` : ""}${collisions.length ? ` ${collisions.length} path collision advisory warning${collisions.length === 1 ? "" : "s"}.` : ""}`;
     }),
+  );
+
+  server.registerTool(
+    "tasks_git_provenance_get",
+    {
+      title: "Get execution Git provenance",
+      description:
+        "Read derived Git baseline, snapshots and structured touched-path facts for the active or most recent execution. These facts come only from the local Git adapter; agent-authored notes remain checkpoints and evidence.",
+      inputSchema: { task: z.string() },
+    },
+    (input) => guard(() => renderGitProvenance(workspace.provenance.forTask(input.task))),
+  );
+
+  server.registerTool(
+    "tasks_git_provenance_capture",
+    {
+      title: "Capture execution Git provenance",
+      description:
+        "Capture a manual read-only Git snapshot from the task execution's stored worktree binding. No path or cwd can be supplied.",
+      inputSchema: { task: z.string() },
+    },
+    (input) =>
+      guardAsync(async () => {
+        const snapshot = await workspace.git.captureSnapshot(input.task, { trigger: "manual" });
+        if (!snapshot) return "No explicit execution worktree is available; nothing was captured.";
+        return [
+          renderGitProvenance(workspace.provenance.forTask(input.task)),
+          renderPathOwnership(
+            workspace.ownership.forTask(input.task),
+            workspace.ownership.collisionsForTask(input.task),
+          ),
+        ].join("\n");
+      }),
   );
 
   server.registerTool(
@@ -540,13 +1202,144 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
     "tasks_add_criterion_evidence",
     {
       title: "Attach acceptance-criterion evidence",
-      description: "Attach test output, a file reference, result, or URL that proves one acceptance criterion. Add evidence as it is proven rather than only at completion.",
-      inputSchema: { task: z.string(), criterion: z.string(), type: z.string().min(1), reference: z.string().nullable().optional(), content: z.string().nullable().optional(), url: z.string().url().nullable().optional(), ...actorShape },
+      description: "Persist typed commit, test, file, URL, result, or note evidence. This tool stores data only and never runs commands or fetches URLs.",
+      inputSchema: {
+        task: z.string(),
+        criterion: z.string(),
+        kind: z.enum(["commit", "test", "file", "url", "result", "note"]),
+        repository: z.string().optional(),
+        sha: z.string().optional(),
+        execution_id: z.string().optional(),
+        worktree_id: z.string().optional(),
+        name: z.string().optional(),
+        outcome: z.enum(["passed", "failed", "informational"]).optional(),
+        reference: z.string().optional(),
+        path: z.string().optional(),
+        title: z.string().optional(),
+        summary: z.string().optional(),
+        content: z.string().optional(),
+        url: z.string().url().optional(),
+        ...actorShape,
+      },
     },
     (input) => guard(() => {
-      const evidence = workspace.executions.addEvidence(input.task, input.criterion, { type: input.type, ...(input.reference !== undefined ? { reference: input.reference } : {}), ...(input.content !== undefined ? { content: input.content } : {}), ...(input.url !== undefined ? { url: input.url } : {}), ...meta(input) });
-      return `Evidence ${evidence.id} attached.`;
+      const scope = input.repository
+        ? {
+            repository: input.repository,
+            ...(input.sha ? { sha: input.sha } : {}),
+            ...(input.execution_id ? { executionId: input.execution_id } : {}),
+            ...(input.worktree_id ? { worktreeId: input.worktree_id } : {}),
+          }
+        : undefined;
+      const candidate: unknown =
+        input.kind === "commit"
+          ? { kind: "commit", scope, ...(input.summary ? { summary: input.summary } : {}), ...meta(input) }
+          : input.kind === "test"
+            ? {
+                kind: "test",
+                name: input.name,
+                outcome: input.outcome,
+                ...(input.reference ? { reference: input.reference } : {}),
+                ...(input.summary ? { summary: input.summary } : {}),
+                ...(scope ? { scope } : {}),
+                ...meta(input),
+              }
+            : input.kind === "file"
+              ? {
+                  kind: "file",
+                  path: input.path,
+                  ...(input.summary ? { description: input.summary } : {}),
+                  ...(scope ? { scope } : {}),
+                  ...meta(input),
+                }
+              : input.kind === "url"
+                ? {
+                    kind: "url",
+                    url: input.url,
+                    ...(input.title ? { title: input.title } : {}),
+                    ...(input.summary ? { summary: input.summary } : {}),
+                    ...meta(input),
+                  }
+                : input.kind === "result"
+                  ? { kind: "result", summary: input.summary, outcome: input.outcome, ...meta(input) }
+                  : { kind: "note", content: input.content, ...meta(input) };
+      const parsed = criterionEvidenceSchema.safeParse(candidate);
+      if (!parsed.success) {
+        throw new AgentContinuityError("VALIDATION_ERROR", "Invalid structured evidence.", {
+          issues: parsed.error.issues.map((issue) => ({
+            path: issue.path.join("."),
+            message: issue.message,
+          })),
+        });
+      }
+      const evidence = workspace.evidence.add(input.task, input.criterion, parsed.data);
+      return `Evidence ${evidence.id} (${evidence.kind}) attached.`;
     }),
+  );
+
+  server.registerTool(
+    "tasks_criterion_evidence",
+    {
+      title: "List acceptance-criterion evidence",
+      description: "Read typed and migrated legacy evidence for one criterion.",
+      inputSchema: { task: z.string(), criterion: z.string() },
+    },
+    (input) =>
+      guard(() => {
+        const rows = workspace.evidence.list(input.task, input.criterion);
+        return rows.length === 0 ? "No evidence." : JSON.stringify(rows, null, 2);
+      }),
+  );
+
+  server.registerTool(
+    "tasks_criterion_evidence_policy",
+    {
+      title: "Get or set criterion evidence policy",
+      description: "Read, set or clear an optional evidence requirement used at task completion.",
+      inputSchema: {
+        task: z.string(),
+        criterion: z.string(),
+        clear: z.boolean().optional(),
+        minimum_count: z.number().int().min(1).max(100).optional(),
+        qualifying_kinds: z
+          .array(z.enum(["commit", "test", "file", "url", "result", "note"]))
+          .optional(),
+        require_sha: z.boolean().optional(),
+        require_passing_verification: z.boolean().optional(),
+        ...actorShape,
+      },
+    },
+    (input) =>
+      guard(() => {
+        if (input.clear) {
+          workspace.evidence.clearPolicy(input.task, input.criterion, meta(input));
+          return "Evidence policy cleared.";
+        }
+        if (input.minimum_count !== undefined || input.qualifying_kinds !== undefined) {
+          if (input.minimum_count === undefined || !input.qualifying_kinds) {
+            throw new AgentContinuityError(
+              "VALIDATION_ERROR",
+              "minimum_count and qualifying_kinds are required together.",
+            );
+          }
+          return JSON.stringify(
+            workspace.evidence.setPolicy(input.task, input.criterion, {
+              minimumCount: input.minimum_count,
+              qualifyingKinds: input.qualifying_kinds,
+              requireSha: input.require_sha ?? false,
+              requirePassingVerification: input.require_passing_verification ?? false,
+              ...meta(input),
+            }),
+            null,
+            2,
+          );
+        }
+        return JSON.stringify(
+          workspace.evidence.getPolicy(input.task, input.criterion),
+          null,
+          2,
+        );
+      }),
   );
 
   server.registerTool(
@@ -577,7 +1370,7 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       inputSchema: { task: z.string(), content: z.string().min(1), ...actorShape },
     },
     (input) =>
-      guard(() => {
+      guardAsync(async () => {
         const entry = workspace.tasks.addProgress(input.task, {
           content: input.content,
           ...meta(input),
@@ -647,14 +1440,14 @@ export function registerTools(server: McpServer, workspace: Workspace): void {
       },
     },
     (input) =>
-      guard(() => {
+      guardAsync(async () => {
         if (input.force && !input.reason) {
           throw new AgentContinuityError(
             "VALIDATION_ERROR",
             "A reason is required when forcing completion.",
           );
         }
-        const task = workspace.tasks.complete(input.task, {
+        const task = await workspace.workflows.complete(input.task, {
           force: input.force ?? false,
           ...(input.reason ? { reason: input.reason } : {}),
           ...meta(input),

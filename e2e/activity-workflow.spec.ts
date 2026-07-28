@@ -23,7 +23,7 @@ test("project mutations appear in the activity timeline in reverse chronological
   await expect(page.getByRole("region", { name: "Project context preview" })).toContainText(
     "Project state persists between agents.",
   );
-  await expect(page.getByText(/38 characters/)).toBeVisible();
+  await expect(page.locator(".context-size").getByText(/38 characters/)).toBeVisible();
 
   await tab(page, "Activity").click();
 

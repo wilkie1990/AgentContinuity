@@ -67,9 +67,14 @@ describe("project service", () => {
 
   it("stores context and records only its length in activity", () => {
     const project = seedProject(workspace);
-    workspace.projects.updateContext(project.key, { context: "A".repeat(482), actor: "codex" });
+    workspace.projects.updateContext(project.key, {
+      context: "A".repeat(482),
+      expectedVersion: 0,
+      actor: "codex",
+    });
     const updated = workspace.projects.updateContext(project.key, {
       context: "B".repeat(731),
+      expectedVersion: 1,
       actor: "codex",
     });
 
@@ -79,7 +84,13 @@ describe("project service", () => {
       .listForProject(project.key, { limit: 50 })
       .events.find((candidate) => candidate.eventType === "project.context_updated");
 
-    expect(event?.payload).toEqual({ previousLength: 482, newLength: 731 });
+    expect(event?.payload).toEqual({
+      previousVersion: 1,
+      newVersion: 2,
+      previousLength: 482,
+      newLength: 731,
+      newBytes: 731,
+    });
     expect(JSON.stringify(event?.payload)).not.toContain("BBB");
   });
 

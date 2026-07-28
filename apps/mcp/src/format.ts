@@ -2,14 +2,24 @@ import type {
   AcceptanceCriterion,
   ActivityEvent,
   Blocker,
+  ContextSize,
+  ContextVersionDetail,
+  ContextVersionPage,
+  ContextVersionSummary,
   Decision,
   Link,
   ProgressEntry,
   ProjectDetail,
+  ProjectRepository,
   ProjectSummary,
+  SearchResponse,
   TaskClaim,
   TaskCheckpoint,
   TaskExecution,
+  ExecutionWorktree,
+  GitProvenanceState,
+  ExecutionPathOwnership,
+  PathCollisionWarning,
   WorkPlanItem,
   NeedsAttentionItem,
   TaskDetail,
@@ -44,6 +54,41 @@ function relative(expiresInMinutes: number): string {
   return `expires in: ${expiresInMinutes} minutes`;
 }
 
+export function renderContextSize(size: ContextSize): string {
+  return `${size.characters} characters, ${size.bytes} UTF-8 bytes${
+    size.overSoftLimit ? " — WARNING: above the 32 KiB soft limit" : ""
+  }`;
+}
+
+export function renderContextVersionLine(version: ContextVersionSummary): string {
+  return [
+    `v${version.version}${version.isCurrent ? " (current)" : ""} — ${version.createdAt}`,
+    `  ${renderContextSize(version.size)}`,
+    `  ${version.actor ?? "unknown"}${version.sessionId ? ` (session ${version.sessionId})` : ""}${
+      version.reason ? ` — ${version.reason}` : ""
+    }`,
+    version.revertedFromVersion ? `  reverted from v${version.revertedFromVersion}` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
+export function renderContextHistory(page: ContextVersionPage): string {
+  if (page.versions.length === 0) return "No context versions recorded.";
+  return [
+    page.versions.map(renderContextVersionLine).join("\n\n"),
+    page.nextBeforeVersion
+      ? `More versions are available before v${page.nextBeforeVersion}.`
+      : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n\n");
+}
+
+export function renderContextVersion(version: ContextVersionDetail): string {
+  return `${renderContextVersionLine(version)}\n\n${version.content ?? "(no context recorded)"}`;
+}
+
 export function renderClaim(claim: TaskClaim | null): string[] {
   if (!claim) return [];
   return [
@@ -64,9 +109,112 @@ export function renderExecution(execution: TaskExecution | null): string[] {
   return [
     `${execution.actor}${execution.sessionId ? ` (session ${execution.sessionId})` : ""} — ${execution.health}`,
     execution.currentPhase ? `phase: ${execution.currentPhase}` : null,
+    execution.worktree
+      ? `worktree: ${execution.worktree.repositoryKey}${
+          execution.worktree.branch ? ` (${execution.worktree.branch})` : ""
+        } — ${execution.worktree.availability.status}`
+      : "worktree: unbound",
     `last heartbeat: ${execution.lastHeartbeatAt}`,
     execution.terminationReason ? `ended: ${execution.terminationReason}` : null,
   ].filter((line): line is string => line !== null);
+}
+
+export function renderRepository(repository: ProjectRepository): string {
+  return [
+    `${repository.key} — ${repository.label}${repository.primary ? " (primary)" : ""}`,
+    `Path: ${repository.rootPath}`,
+    `Availability: ${repository.availability.status}${
+      repository.availability.message ? ` — ${repository.availability.message}` : ""
+    }`,
+    repository.remoteUrl ? `Remote: ${repository.remoteUrl}` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
+export function renderWorktree(worktree: ExecutionWorktree): string {
+  return [
+    `${worktree.repositoryKey} — ${worktree.repositoryLabel}`,
+    `Worktree: ${worktree.worktreePath}`,
+    `Repository-relative: ${worktree.relativePath ?? "external linked worktree"}`,
+    `Branch: ${worktree.branch ?? "not recorded"}`,
+    `Availability: ${worktree.availability.status}${
+      worktree.availability.message ? ` — ${worktree.availability.message}` : ""
+    }`,
+  ].join("\n");
+}
+
+export function renderGitProvenance(provenance: GitProvenanceState | null): string {
+  if (!provenance) return "Git provenance: none";
+  const { baseline, snapshots } = provenance;
+  const latest = snapshots.at(-1);
+  return [
+    `Git baseline: ${baseline.status}${
+      baseline.status === "ok"
+        ? ` — ${baseline.branch ?? "detached"} @ ${baseline.headSha ?? "unborn"}; ${baseline.dirty ? "dirty" : "clean"}`
+        : ` — ${baseline.error?.code}: ${baseline.error?.message}`
+    }`,
+    `Source: ${baseline.source}; repository: ${baseline.repositoryKey}`,
+    `Snapshots: ${snapshots.length}`,
+    latest
+      ? `Latest: ${latest.trigger} — ${latest.status}${
+          latest.status === "ok"
+            ? `; ${latest.headSha ?? "unborn"}; ${latest.filesChanged} paths; +${latest.additions}/-${latest.deletions}`
+            : `; ${latest.error?.code}: ${latest.error?.message}`
+        }`
+      : null,
+    latest?.touchedPaths.length
+      ? `Touched paths: ${latest.touchedPaths
+          .slice(0, 50)
+          .map((path) =>
+            path.previousPath
+              ? `${path.change} ${path.previousPath} -> ${path.path}`
+              : `${path.change} ${path.path}`,
+          )
+          .join(", ")}${latest.touchedPaths.length > 50 ? `, … ${latest.touchedPaths.length - 50} more` : ""}`
+      : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+}
+
+export function renderPathOwnership(
+  ownership: ExecutionPathOwnership | null,
+  collisions: PathCollisionWarning[],
+): string {
+  const declared = ownership?.paths.map((entry) => `${entry.kind}: ${entry.path}`) ?? [];
+  const warnings = collisions.map((collision) => {
+    const overlap = collision.overlaps[0];
+    return `${collision.strength} — ${collision.counterpart.taskKey} (${collision.worktreeRelation})${
+      overlap
+        ? `: ${overlap.taskPath} [${overlap.taskSource}] ↔ ${overlap.counterpartPath} [${overlap.counterpartSource}]`
+        : ""
+    }`;
+  });
+  return [
+    `Path ownership revision: ${ownership ? ownership.version : "none"}`,
+    section("Declared paths", declared),
+    section("Live collision advisories", warnings),
+  ].join("\n");
+}
+
+export function renderSearchResults(response: SearchResponse): string {
+  if (response.results.length === 0) return `No results for "${response.query}".`;
+  return response.results
+    .map((result) => {
+      const scope = result.taskKey
+        ? `${result.projectKey}/${result.taskKey}`
+        : result.projectKey;
+      return [
+        `${result.sourceType} — ${result.sourceKey} (${scope})`,
+        `  ${result.title}`,
+        result.snippet ? `  ${result.snippet}` : null,
+        `  relevance: ${result.score.toFixed(6)}`,
+      ]
+        .filter((line): line is string => line !== null)
+        .join("\n");
+    })
+    .join("\n\n");
 }
 
 export function renderCheckpoints(checkpoints: TaskCheckpoint[]): string[] {
@@ -113,6 +261,7 @@ export function renderProjectDetail(project: ProjectDetail): string {
     project.description ? `Description:\n${project.description}` : null,
     `Progress: ${percent(project.progress)} (${counts.done}/${project.taskTotal} tasks)`,
     `Task counts: backlog ${counts.backlog}, ready ${counts.ready}, in progress ${counts.inProgress}, blocked ${counts.blocked}, review ${counts.review}, done ${counts.done}`,
+    `Project context state: v${project.contextVersion}, ${renderContextSize(project.contextSize)}`,
     section("Project context", project.context ? [project.context] : []),
     section(
       "Recent decisions",
@@ -210,6 +359,7 @@ export function renderTaskDetail(task: TaskDetail): string {
     `Status: ${task.status}`,
     `Priority: ${task.priority}`,
     `Actionable: ${task.isActionable ? "yes" : "no"}`,
+    `Context state: v${task.contextVersion}, ${renderContextSize(task.contextSize)}`,
     section("Description", task.description ? [task.description] : []),
     section("Context", task.context ? [task.context] : []),
     section("Acceptance criteria", renderCriteria(task.acceptanceCriteria)),

@@ -1,9 +1,13 @@
 import { createTestWorkspace, type TestWorkspace } from "@agent-continuity/core/testing";
 import type { FastifyInstance } from "fastify";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { API_PREFIX, buildServer } from "../app.js";
 
 type Json = Record<string, any>;
+const temporaryDirectories: string[] = [];
 
 describe("REST API", () => {
   let workspace: TestWorkspace;
@@ -33,12 +37,89 @@ describe("REST API", () => {
   afterEach(async () => {
     await app.close();
     workspace.close();
+    for (const directory of temporaryDirectories.splice(0)) {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("reports health", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
     expect(JSON.parse(response.body)).toEqual({ status: "ok", version: "0.1.0" });
+  });
+
+  it("exposes exact-session handoff status without returning workspace content", async () => {
+    await call("POST", "/projects", { name: "Continuity" });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Relevant work",
+      status: "ready",
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Another session",
+      status: "ready",
+    });
+    await call("POST", "/tasks/TASK-0001/claim", {
+      actor: "codex",
+      sessionId: "provider-session",
+    });
+    await call("POST", "/tasks/TASK-0002/claim", {
+      actor: "codex",
+      sessionId: "other-session",
+    });
+
+    const response = await call("GET", "/sessions/provider-session/handoff-status");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      sessionId: "provider-session",
+      tasks: [
+        expect.objectContaining({
+          taskKey: "TASK-0001",
+          actor: "codex",
+          checkpointState: "missing",
+        }),
+      ],
+    });
+    expect(JSON.stringify(response.body)).not.toContain("Relevant work");
+    expect(JSON.stringify(response.body)).not.toContain("Another session");
+
+  });
+
+  it("exposes filtered unified search with safe punctuation handling", async () => {
+    await call("POST", "/projects", {
+      name: "Search API",
+      context: "projectapineedle",
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Taskapineedle",
+      context: "taskapicontextneedle",
+      acceptanceCriteria: ["criterionapineedle"],
+    });
+
+    const task = await call(
+      "GET",
+      "/search?q=taskapineedle&project=PRJ-0001&task=TASK-0001&type=task&limit=5",
+    );
+    expect(task.status).toBe(200);
+    expect(task.body).toMatchObject({
+      query: "taskapineedle",
+      limit: 5,
+      results: [
+        {
+          sourceType: "task",
+          projectKey: "PRJ-0001",
+          taskKey: "TASK-0001",
+          sourceKey: "TASK-0001",
+        },
+      ],
+    });
+
+    const punctuation = await call("GET", "/search?q=%22unterminated%20OR%20NEAR%20(%20***");
+    expect(punctuation.status).toBe(200);
+    expect(punctuation.body.results).toEqual([]);
+
+    const invalidType = await call("GET", "/search?q=needle&type=unknown");
+    expect(invalidType.status).toBe(400);
+    expect(invalidType.body.error.code).toBe("VALIDATION_ERROR");
   });
 
   it("persists execution liveness, checkpoints, plans, evidence and origins", async () => {
@@ -54,11 +135,282 @@ describe("REST API", () => {
     expect(plan.body.workPlan).toHaveLength(2);
     const criteria = await call("POST", `/tasks/${taskKey}/acceptance-criteria`, { criteria: ["Covered"], actor: "codex" });
     const criterionId = criteria.body.acceptanceCriteria[0].id as string;
-    expect((await call("POST", `/tasks/${taskKey}/acceptance-criteria/${criterionId}/evidence`, { type: "test", reference: "api.test.ts", actor: "codex" })).status).toBe(201);
+    const evidence = await call(
+      "POST",
+      `/tasks/${taskKey}/acceptance-criteria/${criterionId}/evidence`,
+      {
+        kind: "test",
+        name: "REST suite",
+        outcome: "passed",
+        reference: "api.test.ts",
+        actor: "codex",
+      },
+    );
+    expect(evidence.status).toBe(201);
+    expect(evidence.body.evidence).toMatchObject({
+      kind: "test",
+      name: "REST suite",
+      outcome: "passed",
+    });
+    expect(
+      (
+        await call(
+          "PUT",
+          `/tasks/${taskKey}/acceptance-criteria/${criterionId}/evidence-policy`,
+          {
+            minimumCount: 1,
+            qualifyingKinds: ["test"],
+            requireSha: false,
+            requirePassingVerification: false,
+            actor: "codex",
+          },
+        )
+      ).body.policy,
+    ).toMatchObject({ minimumCount: 1, qualifyingKinds: ["test"] });
+    expect(
+      (
+        await call(
+          "GET",
+          `/tasks/${taskKey}/acceptance-criteria/${criterionId}/evidence`,
+        )
+      ).body.evidence,
+    ).toHaveLength(1);
+    expect(
+      (
+        await call(
+          "POST",
+          `/tasks/${taskKey}/acceptance-criteria/${criterionId}/verify`,
+          { executable: "node", args: [] },
+        )
+      ).status,
+    ).toBe(404);
     expect((await call("POST", `/tasks/${taskKey}/execution/origins`, { provider: "codex", reference: "thread-1", url: "https://example.test/thread-1" })).status).toBe(201);
     const executionState = (await call("GET", `/tasks/${taskKey}/execution`)).body;
-    expect(Object.keys(executionState).sort()).toEqual(["checkpoints", "execution", "handoff", "workPlan"]);
+    expect(Object.keys(executionState).sort()).toEqual([
+      "checkpoints",
+      "collisions",
+      "execution",
+      "handoff",
+      "ownership",
+      "provenance",
+      "workPlan",
+    ]);
     expect(executionState.execution.origins[0].provider).toBe("codex");
+  });
+
+  it("manages explicit repositories and execution worktrees without leaking paths", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-continuity-api-repository-"));
+    temporaryDirectories.push(root);
+    const worktree = join(root, "worktree");
+    mkdirSync(worktree);
+
+    await call("POST", "/projects", { name: "Repository API", actor: "codex" });
+    const associated = await call("POST", "/projects/PRJ-0001/repositories", {
+      label: "Main",
+      rootPath: root,
+      remoteUrl: "https://example.test/team/main.git/",
+      actor: "codex",
+    });
+    expect(associated.status).toBe(201);
+    expect(associated.body.repository).toMatchObject({
+      key: "REP-0001",
+      label: "Main",
+      primary: true,
+      rootPath: realpathSync.native(root),
+    });
+
+    const updated = await call("PATCH", "/projects/PRJ-0001/repositories/REP-0001", {
+      label: "Main repository",
+    });
+    expect(updated.body.repository.label).toBe("Main repository");
+    expect((await call("GET", "/projects/PRJ-0001/repositories")).body.repositories).toHaveLength(1);
+
+    await call("POST", "/projects/PRJ-0001/links", {
+      type: "repository",
+      provider: "github",
+      url: "https://github.com/example/main",
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Bound execution",
+      status: "ready",
+    });
+    const started = await call("POST", "/tasks/TASK-0001/start-work", {
+      actor: "codex",
+      sessionId: "repository-api-run",
+      worktree: {
+        repository: "REP-0001",
+        worktreePath: worktree,
+        branch: "feature/api",
+      },
+    });
+    expect(started.status).toBe(200);
+    expect(started.body.execution.execution.worktree).toMatchObject({
+      repositoryKey: "REP-0001",
+      branch: "feature/api",
+    });
+    expect(JSON.stringify(started.body.execution.execution.worktree)).not.toContain(
+      realpathSync.native(root),
+    );
+    expect(started.body.execution.provenance.baseline).toMatchObject({
+      source: "local_git",
+      status: "error",
+      error: { code: "not_git_repository" },
+    });
+    const ownership = await call(
+      "PUT",
+      "/tasks/TASK-0001/execution/path-ownership",
+      {
+        paths: [
+          { path: "src/index.ts", kind: "file" },
+          { path: "docs", kind: "directory" },
+        ],
+        actor: "codex",
+        sessionId: "repository-api-run",
+      },
+    );
+    expect(ownership.status).toBe(200);
+    expect(ownership.body).toMatchObject({
+      ownership: {
+        version: 1,
+        paths: [
+          expect.objectContaining({ path: "docs", kind: "directory" }),
+          expect.objectContaining({ path: "src/index.ts", kind: "file" }),
+        ],
+      },
+      collisions: [],
+    });
+    expect(
+      (await call("GET", "/tasks/TASK-0001/execution/path-ownership")).body,
+    ).toMatchObject({ ownership: { version: 1 }, collisions: [] });
+    const invalidOwnership = await call(
+      "PUT",
+      "/tasks/TASK-0001/execution/path-ownership",
+      {
+        paths: [{ path: "C:/outside", kind: "file" }],
+        actor: "codex",
+        sessionId: "repository-api-run",
+      },
+    );
+    expect(invalidOwnership.status).toBe(400);
+    expect(invalidOwnership.body.error.code).toBe("VALIDATION_ERROR");
+    const provenance = await call("GET", "/tasks/TASK-0001/execution/git-provenance");
+    expect(provenance.body.provenance.baseline.repositoryKey).toBe("REP-0001");
+    const captured = await call(
+      "POST",
+      "/tasks/TASK-0001/execution/git-provenance/capture",
+      {},
+    );
+    expect(captured.status).toBe(201);
+    expect(captured.body.provenance).toMatchObject({
+      trigger: "manual",
+      source: "local_git",
+      status: "error",
+    });
+
+    const explicit = await call("GET", "/tasks/TASK-0001/execution/worktree");
+    expect(explicit.body.worktree).toMatchObject({
+      worktreePath: realpathSync.native(worktree),
+      relativePath: "worktree",
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Missing worktree",
+      status: "ready",
+    });
+    const unavailable = await call("POST", "/tasks/TASK-0002/start-work", {
+      actor: "codex",
+      sessionId: "missing-run",
+      worktree: {
+        repository: "REP-0001",
+        worktreePath: join(root, "missing"),
+      },
+    });
+    expect(unavailable.status).toBe(422);
+    expect(unavailable.body.error.code).toBe("REPOSITORY_PATH_UNAVAILABLE");
+    expect((await call("GET", "/tasks/TASK-0002")).body.task).toMatchObject({
+      status: "ready",
+      claim: null,
+      execution: null,
+    });
+    const refused = await call("DELETE", "/projects/PRJ-0001/repositories/REP-0001", {
+      force: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error.code).toBe("REPOSITORY_IN_USE");
+
+    const unbound = await call("DELETE", "/tasks/TASK-0001/execution/worktree", {
+      actor: "codex",
+      sessionId: "repository-api-run",
+    });
+    expect(unbound.status).toBe(200);
+    expect(
+      (await call("DELETE", "/projects/PRJ-0001/repositories/REP-0001", { force: false }))
+        .status,
+    ).toBe(200);
+    expect((await call("GET", "/projects/PRJ-0001/links")).body.links).toHaveLength(1);
+  });
+
+  it("runs start, report and handoff composites over HTTP", async () => {
+    await call("POST", "/projects", {
+      name: "Composite API",
+      context: "Project context returned at start.",
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Composite lifecycle",
+      context: "Task context returned at start.",
+      status: "ready",
+    });
+
+    const missingSession = await call("POST", "/tasks/TASK-0001/start-work", {
+      actor: "codex",
+    });
+    expect(missingSession.status).toBe(400);
+    expect(missingSession.body.error.code).toBe("VALIDATION_ERROR");
+
+    const started = await call("POST", "/tasks/TASK-0001/start-work", {
+      actor: "codex",
+      sessionId: "run-1",
+    });
+    expect(started.status).toBe(200);
+    expect(started.body.project.context).toBe("Project context returned at start.");
+    expect(started.body.task.context).toBe("Task context returned at start.");
+    expect(started.body.task.claim.actor).toBe("codex");
+    expect(started.body.execution.execution.health).toBe("active");
+
+    const reported = await call("POST", "/tasks/TASK-0001/report", {
+      actor: "codex",
+      sessionId: "run-1",
+      phase: "Adapter tests",
+      progress: "REST workflow exposed.",
+      checkpoint: {
+        completed: "Core",
+        workingOn: "Adapters",
+        next: "Verify handoff",
+      },
+    });
+    expect(reported.status).toBe(200);
+    expect(reported.body.execution.currentPhase).toBe("Adapter tests");
+    expect(reported.body.progress.content).toBe("REST workflow exposed.");
+    expect(reported.body.checkpoint.next).toBe("Verify handoff");
+
+    const handedOff = await call("POST", "/tasks/TASK-0001/handoff", {
+      actor: "codex",
+      sessionId: "run-1",
+      checkpoint: {
+        completed: "Core and REST",
+        workingOn: "Verification",
+        next: "Continue test suite",
+      },
+    });
+    expect(handedOff.status).toBe(200);
+    expect(handedOff.body.task.claim).toBeNull();
+    expect(handedOff.body.handoff.nextAction).toBe("Continue test suite");
+
+    const invalid = await call("POST", "/tasks/TASK-0001/handoff", {
+      actor: "codex",
+      sessionId: "run-1",
+    });
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.error.code).toBe("VALIDATION_ERROR");
   });
 
   it("creates, reads, updates and archives a project", async () => {
@@ -87,6 +439,7 @@ describe("REST API", () => {
 
     const context = await call("PUT", "/projects/PRJ-0001/context", {
       context: "Project state persists.",
+      expectedVersion: 0,
       actor: "codex",
     });
     expect(context.body.project.context).toBe("Project state persists.");
@@ -96,6 +449,98 @@ describe("REST API", () => {
 
     const archived = await call("POST", "/projects/PRJ-0001/archive", { actor: "adam" });
     expect(archived.body.project.status).toBe("archived");
+  });
+
+  it("exposes bounded versioned context with conflicts and append-only reverts", async () => {
+    const created = await call("POST", "/projects", {
+      name: "Context API",
+      context: "project version one",
+      actor: "codex",
+    });
+    expect(created.body.project).toMatchObject({
+      contextVersion: 1,
+      contextSize: { characters: 19, bytes: 19, overSoftLimit: false },
+    });
+    await call("POST", "/projects/PRJ-0001/tasks", {
+      title: "Context task",
+      context: "task version one",
+    });
+
+    const updated = await call("PUT", "/projects/PRJ-0001/context", {
+      context: "project version two",
+      expectedVersion: 1,
+      reason: "API edit",
+      actor: "codex",
+    });
+    expect(updated.body.project.contextVersion).toBe(2);
+
+    const history = await call(
+      "GET",
+      "/projects/PRJ-0001/context/versions?limit=1",
+    );
+    expect(history.body.versions).toHaveLength(1);
+    expect(history.body.versions[0]).toMatchObject({
+      version: 2,
+      reason: "API edit",
+      isCurrent: true,
+    });
+    expect(history.body.versions[0]).not.toHaveProperty("content");
+    expect(history.body.nextBeforeVersion).toBe(2);
+
+    const version = await call(
+      "GET",
+      "/projects/PRJ-0001/context/versions/1",
+    );
+    expect(version.body.version.content).toBe("project version one");
+
+    const stale = await call("PUT", "/projects/PRJ-0001/context", {
+      context: "stale",
+      expectedVersion: 1,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body.error.code).toBe("CONTEXT_VERSION_CONFLICT");
+
+    const reverted = await call("POST", "/projects/PRJ-0001/context/revert", {
+      targetVersion: 1,
+      expectedVersion: 2,
+      actor: "codex",
+    });
+    expect(reverted.body.project).toMatchObject({
+      context: "project version one",
+      contextVersion: 3,
+    });
+
+    const taskUpdated = await call("PUT", "/tasks/TASK-0001/context", {
+      context: "task version two",
+      expectedVersion: 1,
+    });
+    expect(taskUpdated.body.task.contextVersion).toBe(2);
+    const taskHistory = await call("GET", "/tasks/TASK-0001/context/versions");
+    expect(taskHistory.body.versions.map((entry: Json) => entry.version)).toEqual([2, 1]);
+    expect(
+      (await call("GET", "/tasks/TASK-0001/context/versions/1")).body.version.content,
+    ).toBe("task version one");
+    expect(
+      (
+        await call("POST", "/tasks/TASK-0001/context/revert", {
+          targetVersion: 1,
+          expectedVersion: 2,
+        })
+      ).body.task.contextVersion,
+    ).toBe(3);
+
+    const missingExpected = await call("PUT", "/tasks/TASK-0001/context", {
+      context: "unsafe",
+    });
+    expect(missingExpected.status).toBe(400);
+    expect(missingExpected.body.error.code).toBe("VALIDATION_ERROR");
+
+    const tooLarge = await call("PUT", "/projects/PRJ-0001/context", {
+      context: "x".repeat(256 * 1024 + 1),
+      expectedVersion: 3,
+    });
+    expect(tooLarge.status).toBe(413);
+    expect(tooLarge.body.error.code).toBe("CONTEXT_TOO_LARGE");
   });
 
   it("bootstraps a project atomically", async () => {

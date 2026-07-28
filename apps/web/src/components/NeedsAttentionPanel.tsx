@@ -12,6 +12,7 @@ const REASONS: Record<NeedsAttentionItem["reason"], string> = {
   blocked: "Blocked",
   review: "Ready for review",
   handoff: "Handoff ready",
+  path_collision: "Path collision",
 };
 
 function ProjectName({ project }: { project: ProjectSummary | undefined }) {
@@ -32,7 +33,7 @@ export function NeedsAttentionPanel({ projectId }: { projectId?: string }) {
       {items.length === 0 ? (
         <EmptyState
           title="Nothing needs attention"
-          hint="Stale or interrupted executions, expired claims, blockers, review work and handoffs will appear here."
+          hint="Stale or interrupted executions, path collisions, expired claims, blockers, review work and handoffs will appear here."
         />
       ) : (
         <div className="attention-list">
@@ -40,7 +41,7 @@ export function NeedsAttentionPanel({ projectId }: { projectId?: string }) {
             const project = projectById.get(item.projectId);
             const taskHref = project ? `/projects/${project.key}?task=${item.taskKey}` : null;
             return (
-              <article className="attention-item" key={`${item.projectId}:${item.taskId}:${item.reason}`}>
+              <article className="attention-item" key={`${item.projectId}:${item.taskId}:${item.reason}:${item.collision?.id ?? ""}`}>
                 <div className="spread">
                   <div className="row" style={{ gap: 6 }}>
                     <span className={`badge attention-reason attention-${item.reason}`}>{REASONS[item.reason]}</span>

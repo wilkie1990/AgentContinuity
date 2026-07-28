@@ -1,11 +1,20 @@
 import { z } from "zod";
 import { actorFields, arrayable, booleanQuery, nullableText, refSchema } from "./common.js";
+import { nullableContextContentSchema, replaceContextSchema } from "./context.js";
 import { taskPrioritySchema, taskStatusSchema } from "./enums.js";
+export {
+  clearCriterionEvidencePolicySchema,
+  criterionEvidencePolicySchema,
+  criterionEvidenceSchema,
+  type ClearCriterionEvidencePolicyInput,
+  type CriterionEvidenceInput,
+  type CriterionEvidencePolicyInput,
+} from "./evidence.js";
 
 export const createTaskSchema = z.strictObject({
   title: z.string().min(1).max(300),
   description: nullableText,
-  context: nullableText,
+  context: nullableContextContentSchema.optional(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   parentTask: refSchema.nullable().optional(),
@@ -25,19 +34,33 @@ export type CreateTasksInput = z.infer<typeof createTasksSchema>;
 export const updateTaskSchema = z.strictObject({
   title: z.string().min(1).max(300).optional(),
   description: nullableText,
-  context: nullableText,
+  context: nullableContextContentSchema.optional(),
+  expectedContextVersion: z.number().int().min(0).optional(),
+  contextReason: z.string().min(1).max(2000).optional(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   parentTask: refSchema.nullable().optional(),
   sortOrder: z.number().optional(),
   ...actorFields,
+}).superRefine((value, context) => {
+  if (value.context !== undefined && value.expectedContextVersion === undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["expectedContextVersion"],
+      message: "expectedContextVersion is required when replacing context.",
+    });
+  }
+  if (value.context === undefined && value.contextReason !== undefined) {
+    context.addIssue({
+      code: "custom",
+      path: ["contextReason"],
+      message: "contextReason may only be supplied when replacing context.",
+    });
+  }
 });
 export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
 
-export const updateTaskContextSchema = z.strictObject({
-  context: z.string().max(1_000_000),
-  ...actorFields,
-});
+export const updateTaskContextSchema = replaceContextSchema;
 export type UpdateTaskContextInput = z.infer<typeof updateTaskContextSchema>;
 
 export const listTasksQuerySchema = z.object({
@@ -137,7 +160,5 @@ export const workPlanSchema = z.strictObject({ items: z.array(z.string().min(1).
 export type WorkPlanInput = z.infer<typeof workPlanSchema>;
 export const updateWorkPlanItemSchema = z.strictObject({ status: z.enum(["pending", "active", "completed", "skipped"]), ...actorFields });
 export type UpdateWorkPlanItemInput = z.infer<typeof updateWorkPlanItemSchema>;
-export const criterionEvidenceSchema = z.strictObject({ type: z.string().min(1).max(120), reference: z.string().max(2000).nullable().optional(), content: z.string().max(20_000).nullable().optional(), url: z.string().url().max(4000).nullable().optional(), ...actorFields }).refine(v => Boolean(v.reference || v.content || v.url), { message: "Provide a reference, content, or URL." });
-export type CriterionEvidenceInput = z.infer<typeof criterionEvidenceSchema>;
 export const executionOriginSchema = z.strictObject({ provider: z.string().min(1).max(120), reference: z.string().min(1).max(2000), url: z.string().url().max(4000).nullable().optional(), metadata: z.record(z.string(), z.unknown()).nullable().optional() });
 export type ExecutionOriginInput = z.infer<typeof executionOriginSchema>;

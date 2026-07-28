@@ -4,21 +4,29 @@ import {
   bootstrapProjectSchema,
   createDecisionSchema,
   createProjectSchema,
+  createRepositorySchema,
   createTaskSchema,
   deleteProjectSchema,
   listActivityQuerySchema,
+  listContextVersionsQuerySchema,
   listDecisionsQuerySchema,
   listLinksQuerySchema,
   listProjectsQuerySchema,
   listTasksQuerySchema,
+  removeRepositorySchema,
+  revertContextSchema,
+  contextVersionParamSchema,
   updateProjectContextSchema,
   updateProjectSchema,
+  updateRepositorySchema,
 } from "@agent-continuity/contracts";
 import type { Workspace } from "@agent-continuity/core";
 import type { FastifyPluginCallback } from "fastify";
 import { parse } from "../validation.js";
 
 type Params = { project: string };
+type RepositoryParams = Params & { repository: string };
+type ContextVersionParams = Params & { version: string };
 
 export function projectRoutes(workspace: Workspace): FastifyPluginCallback {
   return (app, _options, done) => {
@@ -51,6 +59,27 @@ export function projectRoutes(workspace: Workspace): FastifyPluginCallback {
       return { project: workspace.projects.updateContext(request.params.project, input) };
     });
 
+    app.get<{ Params: Params }>("/projects/:project/context/versions", (request) => {
+      const query = parse(listContextVersionsQuerySchema, request.query, "query");
+      return workspace.contexts.listProject(request.params.project, query);
+    });
+
+    app.get<{ Params: ContextVersionParams }>(
+      "/projects/:project/context/versions/:version",
+      (request) => {
+        const version = parse(contextVersionParamSchema, request.params.version, "params");
+        return {
+          version: workspace.contexts.getProject(request.params.project, version),
+        };
+      },
+    );
+
+    app.post<{ Params: Params }>("/projects/:project/context/revert", (request) => {
+      const input = parse(revertContextSchema, request.body);
+      const row = workspace.contexts.revertProject(request.params.project, input);
+      return { project: workspace.projects.summarise(row) };
+    });
+
     app.post<{ Params: Params }>("/projects/:project/archive", (request) => {
       const input = parse(archiveProjectSchema, request.body);
       return { project: workspace.projects.archive(request.params.project, input) };
@@ -70,6 +99,57 @@ export function projectRoutes(workspace: Workspace): FastifyPluginCallback {
       const query = parse(listTasksQuerySchema, request.query, "query");
       return { tasks: workspace.tasks.list(request.params.project, query) };
     });
+
+    app.post<{ Params: Params }>("/projects/:project/repositories", (request, reply) => {
+      const input = parse(createRepositorySchema, request.body);
+      return reply
+        .status(201)
+        .send({ repository: workspace.repositories.create(request.params.project, input) });
+    });
+
+    app.get<{ Params: Params }>("/projects/:project/repositories", (request) => {
+      return { repositories: workspace.repositories.list(request.params.project) };
+    });
+
+    app.get<{ Params: RepositoryParams }>(
+      "/projects/:project/repositories/:repository",
+      (request) => {
+        return {
+          repository: workspace.repositories.get(
+            request.params.project,
+            request.params.repository,
+          ),
+        };
+      },
+    );
+
+    app.patch<{ Params: RepositoryParams }>(
+      "/projects/:project/repositories/:repository",
+      (request) => {
+        const input = parse(updateRepositorySchema, request.body);
+        return {
+          repository: workspace.repositories.update(
+            request.params.project,
+            request.params.repository,
+            input,
+          ),
+        };
+      },
+    );
+
+    app.delete<{ Params: RepositoryParams }>(
+      "/projects/:project/repositories/:repository",
+      (request) => {
+        const input = parse(removeRepositorySchema, request.body);
+        return {
+          removed: workspace.repositories.remove(
+            request.params.project,
+            request.params.repository,
+            input,
+          ),
+        };
+      },
+    );
 
     app.post<{ Params: Params }>("/projects/:project/decisions", (request, reply) => {
       const input = parse(createDecisionSchema, request.body);

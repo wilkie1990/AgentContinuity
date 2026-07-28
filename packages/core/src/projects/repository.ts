@@ -2,6 +2,7 @@ import type { ProjectStatus, ProjectSummary, TaskCounts } from "@agent-continuit
 import { tasks, type ProjectRow } from "@agent-continuity/database";
 import { eq, sql } from "drizzle-orm";
 import type { ActivityService } from "../activity/service.js";
+import { measureContext } from "../context/size.js";
 import type { Runtime } from "../runtime.js";
 
 const EMPTY_COUNTS: TaskCounts = {
@@ -51,6 +52,8 @@ export function toProjectSummary(
     objective: row.objective,
     description: row.description,
     context: row.context,
+    contextVersion: row.contextVersion,
+    contextSize: measureContext(row.context),
     status: row.status as ProjectStatus,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

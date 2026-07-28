@@ -1,0 +1,36 @@
+services:
+  agent-continuity:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Defaults to the Docker Hub official Node image. This is overrideable
+        # only for constrained local environments with an official mirror.
+        NODE_IMAGE: ${AGENT_CONTINUITY_NODE_IMAGE:-node:24-bookworm-slim}
+    image: agent-continuity:local
+    init: true
+    environment:
+      # The process must be reachable by Docker's port forwarder, but this is
+      # published to the host loopback interface only (see ports below).
+      AGENT_CONTINUITY_HOST: 0.0.0.0
+      AGENT_CONTINUITY_PORT: ${AGENT_CONTINUITY_PORT:-4732}
+      AGENT_CONTINUITY_DATA_DIR: /data
+      AGENT_CONTINUITY_DATABASE_PATH: /data/workspace.db
+      AGENT_CONTINUITY_LOG_LEVEL: ${AGENT_CONTINUITY_LOG_LEVEL:-info}
+      AGENT_CONTINUITY_CLAIM_TTL_MINUTES: ${AGENT_CONTINUITY_CLAIM_TTL_MINUTES:-30}
+    ports:
+      # Agent Continuity has no authentication. Do not change 127.0.0.1 to
+      # 0.0.0.0 unless a trusted network boundary has been added first.
+      - "127.0.0.1:${AGENT_CONTINUITY_PORT:-4732}:${AGENT_CONTINUITY_PORT:-4732}"
+    volumes:
+      - agent-continuity-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:' + process.env.AGENT_CONTINUITY_PORT + '/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      start_period: 10s
+      retries: 6
+    restart: unless-stopped
+
+volumes:
+  agent-continuity-data:

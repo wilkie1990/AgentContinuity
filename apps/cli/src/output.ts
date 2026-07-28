@@ -7,6 +7,7 @@ import type {
   TaskDetail,
   TaskSummary,
 } from "@agent-continuity/contracts";
+import { contextSizeText } from "./context.js";
 
 export function print(value: string): void {
   process.stdout.write(`${value}\n`);
@@ -38,6 +39,7 @@ export function projectDetail(project: ProjectSummary): string {
     `Status:      ${project.status}`,
     `Progress:    ${percent(project.progress).trim()} (${project.taskCounts.done}/${project.taskTotal} tasks)`,
     `Tasks:       backlog ${project.taskCounts.backlog} · ready ${project.taskCounts.ready} · in progress ${project.taskCounts.inProgress} · blocked ${project.taskCounts.blocked} · review ${project.taskCounts.review} · done ${project.taskCounts.done}`,
+    `Context:     v${project.contextVersion} · ${contextSizeText(project.contextSize)}`,
     project.lastActivityAt ? `Last active: ${project.lastActivityAt}` : null,
     project.description ? `\n${project.description}` : null,
   ]
@@ -72,6 +74,7 @@ export function taskDetail(task: TaskDetail): string {
     `Status:      ${task.status}`,
     `Priority:    ${task.priority}`,
     `Actionable:  ${task.isActionable ? "yes" : "no"}`,
+    `Context:     v${task.contextVersion} · ${contextSizeText(task.contextSize)}`,
     task.description ? `\nDescription\n  ${task.description}` : null,
     task.context ? `\nContext\n  ${task.context}` : null,
     block(

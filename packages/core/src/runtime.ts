@@ -12,7 +12,7 @@ export type RuntimeOptions = {
 /**
  * Shared execution context for the core services.
  *
- * better-sqlite3 is synchronous, so a single mutable "current connection" is enough to
+ * node:sqlite is synchronous, so a single mutable "current connection" is enough to
  * make any service call participate in an outer transaction without threading a `tx`
  * argument through every signature. Nested `tx()` calls join the enclosing transaction.
  */
@@ -42,7 +42,8 @@ export class Runtime {
     return this.#current !== null;
   }
 
-  tx<T>(fn: () => T): T {
+  tx<T>(fn: () => T extends Promise<unknown> ? never : T): T;
+  tx(fn: () => unknown): unknown {
     if (this.#current) return fn();
     return this.#base.transaction((tx) => {
       this.#current = tx as unknown as WorkspaceDatabase;

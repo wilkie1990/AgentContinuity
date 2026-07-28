@@ -111,6 +111,8 @@
 .criterion { display: flex; gap: 8px; align-items: flex-start; }
 .criterion input { width: auto; margin-top: 3px; }
 .criterion.complete span { text-decoration: line-through; color: var(--muted); }
+.criterion-card { display: grid; gap: 4px; padding: 3px 0; }
+.criterion-meta { margin-left: 25px; color: var(--muted); font-size: 12px; }
 
 /* The Now section is a deliberate resume surface, not another activity feed. */
 .now-execution {

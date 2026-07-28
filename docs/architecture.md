@@ -53,10 +53,10 @@ running HTTP server.
 `core`, `server`, `mcp` and `cli` all need the same resolution rules, and putting them in
 `contracts` would have mixed request validation with process configuration.
 
-## Synchronous core
+## Synchronous state and asynchronous local inspection
 
-`better-sqlite3` is synchronous, so the core services are synchronous too. This is not an
-accident:
+Node's built-in `node:sqlite` `DatabaseSync` API is synchronous, so domain state changes
+remain synchronous. This is not an accident:
 
 - A transaction is an ordinary function call, so `projects.bootstrap()` genuinely commits
   or rolls back as one unit without any async plumbing.
@@ -69,6 +69,13 @@ possible.
 
 `Runtime` also owns the clock and id factory, which is what makes claim expiry testable
 without waiting 30 minutes.
+
+Local Git inspection is the deliberate exception. The adapter uses asynchronous
+`child_process.execFile` calls with explicit argument arrays and the stored execution
+worktree as `cwd`; it never holds a SQLite transaction open while waiting on a child
+process. Composite workflows commit their primary lifecycle state first, then append a
+best-effort provenance result. An inspection failure therefore becomes a durable error
+snapshot rather than rolling back a valid checkpoint, handoff or completion.
 
 ## Identifiers
 
@@ -133,9 +140,58 @@ scaled to the whole project: any task inside it holding an active claim blocks d
 `force` is passed. Deletion does not require the project to be archived first — archiving and
 deletion are different operations serving different needs.
 
-**Context is not a log.** Project and task context are replaced wholesale and their
-activity events record only `previousLength` and `newLength`, never the text — activity
-must not duplicate large context values.
+**Context has immutable history and an efficient current projection.** Project and task
+rows retain nullable free-form Markdown plus a monotonic `context_version`; ordinary reads
+and unified search use those columns without joining history. `context_versions` appends
+the exact nullable value, Unicode-character/UTF-8 byte size, attribution, reason and
+optional revert source. Replacements use a required expected version and compare-and-swap
+the projection, so stale writers fail with `CONTEXT_VERSION_CONFLICT`. Revert copies an old
+value into a new latest version and never deletes later history. Activity carries versions
+and sizes, never the text. Search indexes current context only.
+
+The 32 KiB soft warning and 256 KiB hard ceiling are both UTF-8 byte thresholds. Historical
+lists are bounded metadata; full content requires a targeted version read. No service
+algorithmically compacts or summarizes context.
+
+**Git provenance is derived and explicitly scoped.** One immutable baseline belongs to one
+task execution, worktree binding and project repository. Append-only snapshots carry a
+monotonic per-baseline sequence and normalized touched paths for downstream collision
+analysis. The core persistence service accepts typed facts only after validating those
+three identities. A separate local adapter reads the path-bearing binding and invokes
+bounded, read-only Git commands; no process cwd fallback exists. Derived records are marked
+`local_git`, while agent-authored checkpoints and evidence stay separate.
+
+**Acceptance evidence is typed and append-only.** The original free-form evidence table
+remains the stable search projection. A one-to-one details row supplies the structured kind,
+bounded payload and historical repository/worktree/execution/SHA snapshot; migrated rows
+are read-only `legacy` evidence and retain every original base value. Optional per-criterion
+policies are evaluated after incomplete criteria and blockers at completion. Forced
+completion requires and audits a reason.
+
+**Verification execution is CLI-local.** The server, client library, core persistence
+service and MCP expose no process-launch operation. The CLI resolves cwd only from the
+task's stored execution worktree, accepts an executable plus argument vector with
+`shell=false`, captures fixed-memory stdout/stderr tails, enforces a timeout, and probes Git
+before and after. POSIX uses a detached process group for SIGTERM/SIGKILL tree termination;
+Windows termination is best-effort for the direct child. Passing verification adds evidence
+but never completes a criterion or task.
+
+**Path collision warnings are derived, bounded and advisory.** Versioned ownership
+revisions retain what each execution declared, while warnings are recomputed from the
+latest live declaration and latest successful cumulative Git snapshot. Comparisons require
+the same repository identity and an unreleased, unexpired claim; same-worktree and
+separate-worktree risks remain distinct. Exact-key, sorted prefix and directory-ancestor
+indexes avoid an execution-pair Cartesian scan for large diffs. Warnings feed execution
+state and Needs Attention but never participate in claim eligibility.
+
+**Unified search is a transactional derived index.** Canonical workspace tables remain the
+source of truth. `search_documents` stores constrained source/scope metadata and normalized
+text; an external-content FTS5 table supplies Unicode tokenization, BM25 ranking and
+snippets. Database triggers keep those two derived tables synchronized, while the core
+search service rebuilds the affected project/task scope inside the same `Runtime`
+transaction as the canonical mutation. Project/task foreign keys clean up cascades, and
+task deletion explicitly reindexes decisions that fall back to project scope. Search never
+uses embeddings or an external service, and callers cannot supply raw MATCH syntax.
 
 ## Activity
 

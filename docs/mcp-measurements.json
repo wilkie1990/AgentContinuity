@@ -1,0 +1,61 @@
+{
+  "method": {
+    "tokenApproximation": "ceil(UTF-8 bytes / 4), a documented approximation rather than tokenizer output",
+    "schemaSerialization": "UTF-8 byte length of JSON.stringify(tool.inputSchema) returned by tools/list"
+  },
+  "profiles": [
+    {
+      "profile": "full",
+      "registeredToolCount": 61,
+      "inputSchemaBytes": 25642,
+      "inputSchemaTokensApprox": 6411,
+      "descriptionBytes": 9774,
+      "descriptionTokensApprox": 2444,
+      "toolNames": [
+        "activity_list", "attention_list", "decisions_create", "decisions_list", "handoff", "links_add",
+        "links_list", "links_remove", "profile_info", "projects_bootstrap", "projects_context_history",
+        "projects_context_revert", "projects_context_version_get", "projects_create", "projects_delete",
+        "projects_get", "projects_list", "projects_update", "projects_update_context", "report",
+        "repositories_add", "repositories_get", "repositories_list", "repositories_remove", "repositories_update",
+        "search", "start_work", "tasks_add_acceptance_criteria", "tasks_add_blocker", "tasks_add_criterion_evidence",
+        "tasks_add_dependency", "tasks_add_execution_origin", "tasks_add_progress", "tasks_checkpoint", "tasks_claim",
+        "tasks_complete", "tasks_context_history", "tasks_context_revert", "tasks_context_version_get", "tasks_create",
+        "tasks_criterion_evidence", "tasks_criterion_evidence_policy", "tasks_delete", "tasks_execution_get", "tasks_get",
+        "tasks_git_provenance_capture", "tasks_git_provenance_get", "tasks_heartbeat", "tasks_list",
+        "tasks_path_ownership_get", "tasks_path_ownership_set", "tasks_release_claim", "tasks_remove_dependency",
+        "tasks_resolve_blocker", "tasks_update", "tasks_update_acceptance_criteria", "tasks_update_context",
+        "tasks_work_plan", "tasks_worktree_bind", "tasks_worktree_get", "tasks_worktree_unbind"
+      ]
+    },
+    {
+      "profile": "agent",
+      "registeredToolCount": 47,
+      "inputSchemaBytes": 20262,
+      "inputSchemaTokensApprox": 5066,
+      "descriptionBytes": 7152,
+      "descriptionTokensApprox": 1788,
+      "toolNames": [
+        "activity_list", "attention_list", "decisions_create", "decisions_list", "handoff", "links_add",
+        "links_list", "profile_info", "projects_bootstrap", "projects_context_history",
+        "projects_context_revert", "projects_context_version_get", "projects_get", "projects_list",
+        "projects_update", "projects_update_context", "report", "repositories_add", "repositories_get",
+        "repositories_list", "search", "start_work", "tasks_add_acceptance_criteria", "tasks_add_blocker",
+        "tasks_add_criterion_evidence", "tasks_add_dependency", "tasks_add_execution_origin",
+        "tasks_complete", "tasks_context_history", "tasks_context_revert", "tasks_context_version_get",
+        "tasks_create", "tasks_criterion_evidence", "tasks_criterion_evidence_policy",
+        "tasks_execution_get", "tasks_get", "tasks_git_provenance_get", "tasks_list",
+        "tasks_path_ownership_get", "tasks_path_ownership_set", "tasks_remove_dependency",
+        "tasks_resolve_blocker", "tasks_update", "tasks_update_acceptance_criteria",
+        "tasks_update_context", "tasks_work_plan", "tasks_worktree_get"
+      ]
+    }
+  ],
+  "representativeRoundTrips": [
+    {
+      "scenario": "Lifecycle with one meaningful report and final handoff",
+      "atomicCalls": 9,
+      "compositeCalls": 3,
+      "reductionPercent": 67
+    }
+  ]
+}

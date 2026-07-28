@@ -1,21 +1,33 @@
 import { useParams } from "react-router-dom";
 import { client, useProject, useWorkspaceMutation } from "../api.js";
 import { MarkdownContextEditor } from "../components/MarkdownContextEditor.js";
+import {
+  ContextHistoryPanel,
+  ContextSizeStatus,
+} from "../components/ContextHistoryPanel.js";
 import { ProjectHeader } from "../components/ProjectHeader.js";
 import { ErrorNote, UI_ACTOR } from "../components/common.js";
 import { Skeleton } from "../components/StatePlaceholders.js";
-import { formatDateTime } from "../format.js";
-import { useSyncedDraft } from "../hooks.js";
+import { useVersionedSyncedDraft } from "../hooks.js";
 
 export function ContextPage() {
   const { project: ref } = useParams();
   const { data: project, isLoading, error } = useProject(ref);
   // Seeded from the server but kept from being clobbered by a background
   // refetch (polling, window refocus) while mid-edit — see useSyncedDraft.
-  const [value, setValue] = useSyncedDraft(project?.context, project?.id);
+  const [value, setValue, expectedVersion] = useVersionedSyncedDraft(
+    project?.context,
+    project?.contextVersion,
+    project?.id,
+  );
 
   const save = useWorkspaceMutation(ref, (next: string) =>
-    client.projects.updateContext(ref as string, { context: next, actor: UI_ACTOR }),
+    client.projects.updateContext(ref as string, {
+      context: next,
+      expectedVersion: expectedVersion.current,
+      reason: "Updated from the web UI.",
+      actor: UI_ACTOR,
+    }),
   );
 
   if (isLoading) return <Skeleton lines={6} />;
@@ -44,11 +56,13 @@ export function ContextPage() {
           onChange={setValue}
           onSave={(next) => save.mutateAsync(next)}
         />
-        <p className="small muted">
-          {value.length === 0
-            ? "No context recorded yet."
-            : `${value.length} characters · Last updated ${formatDateTime(project.updatedAt)}`}
-        </p>
+        <ContextSizeStatus version={project.contextVersion} size={project.contextSize} />
+        <ContextHistoryPanel
+          ownerType="project"
+          ownerRef={project.key}
+          projectRef={project.key}
+          currentVersion={project.contextVersion}
+        />
       </div>
     </>
   );

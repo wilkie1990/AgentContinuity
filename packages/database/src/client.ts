@@ -1,16 +1,14 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/node-sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { runMigrations } from "./migrate.js";
-import * as schema from "./schema.js";
 
-export type WorkspaceDatabase = BetterSQLite3Database<typeof schema>;
+export type WorkspaceDatabase = ReturnType<typeof drizzle>;
 
 export type DatabaseHandle = {
   db: WorkspaceDatabase;
-  sqlite: Database.Database;
+  sqlite: DatabaseSync;
   path: string;
   close(): void;
 };
@@ -29,18 +27,21 @@ export function createDatabase(options: CreateDatabaseOptions): DatabaseHandle {
     mkdirSync(dirname(path), { recursive: true });
   }
 
-  const sqlite = new Database(path, { readonly });
+  const sqlite = new DatabaseSync(path, {
+    readOnly: readonly,
+    enableForeignKeyConstraints: true,
+    timeout: 5_000,
+  });
 
-  sqlite.pragma("journal_mode = WAL");
-  sqlite.pragma("foreign_keys = ON");
-  // Wait rather than fail immediately when the CLI, server and MCP server contend.
-  sqlite.pragma("busy_timeout = 5000");
+  // WAL is persistent for file databases. In-memory databases report `memory`.
+  sqlite.exec("PRAGMA journal_mode = WAL");
+  sqlite.exec("PRAGMA foreign_keys = ON");
 
   if (migrate && !readonly) {
     runMigrations(sqlite);
   }
 
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle({ client: sqlite });
 
   return {
     db,
