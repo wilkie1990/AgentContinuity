@@ -28,12 +28,14 @@ mutate and hand over reliably.
 
 ## See it in action
 
-![Agent Continuity walkthrough](apps/video/deliverables/agent-continuity-how-to-poster.png)
+![Agent Continuity concurrent-agents product demo](apps/video/deliverables/v2/agent-continuity-product-demo-v2-poster.png)
 
-<video src="https://raw.githubusercontent.com/wilkie1990/AgentContinuity/main/apps/video/deliverables/agent-continuity-how-to-1080p.mp4" width="960" height="540"></video>
+<video src="https://raw.githubusercontent.com/wilkie1990/AgentContinuity/main/apps/video/deliverables/v2/agent-continuity-product-demo-v2-1080p.mp4" width="960" height="540"></video>
 
-Watch the [Agent Continuity walkthrough](apps/video/deliverables/agent-continuity-how-to-1080p.mp4)
-for a guided tour of the project workflow.
+Watch the [verified V2 product demo](apps/video/deliverables/v2/agent-continuity-product-demo-v2-1080p.mp4)
+with [English captions](apps/video/deliverables/v2/agent-continuity-product-demo-v2.en.vtt).
+Release hashes, provenance, and the independent QA decision are recorded in the
+[delivery manifest](apps/video/deliverables/v2/manifest.json).
 
 ## What is in the box
 

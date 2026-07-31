@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "title": "Agent Continuity Product Demo V2 — Concurrent Agents",
+  "releaseStatus": "PASS",
+  "generatedAt": "2026-07-28T23:39:47Z",
+  "credentialFree": true,
+  "publicationMaster": {
+    "file": "agent-continuity-product-demo-v2-1080p.mp4",
+    "source": "apps/video/out/v2/agent-continuity-product-demo-v2-corrected-rc1.mp4",
+    "sourceSha256": "e7022d0821a1dd56bc5dea4abb2c66b422ecea1d02c605099e92d71815f08332",
+    "sha256": "e7022d0821a1dd56bc5dea4abb2c66b422ecea1d02c605099e92d71815f08332",
+    "sizeBytes": 28469652,
+    "container": {
+      "format": "MP4",
+      "durationSeconds": 248.448,
+      "bitRate": 916719
+    },
+    "video": {
+      "codec": "H.264",
+      "codecTag": "avc1",
+      "profile": "High",
+      "width": 1920,
+      "height": 1080,
+      "pixelFormat": "yuv420p",
+      "fieldOrder": "progressive",
+      "frameRate": "30/1",
+      "frameCount": 7453,
+      "durationSeconds": 248.433333,
+      "bitRate": 590577
+    },
+    "audio": {
+      "codec": "AAC",
+      "sampleRate": 48000,
+      "channels": 2,
+      "channelLayout": "stereo",
+      "durationSeconds": 248.448,
+      "bitRate": 317375
+    },
+    "fullDecode": {
+      "videoAndAudio": "passed",
+      "exitCode": 0
+    }
+  },
+  "poster": {
+    "file": "agent-continuity-product-demo-v2-poster.png",
+    "sha256": "b93b3aaeea7dec7ed5ea8cda3f0ee471c2906438f822f27fa03a9f2770dfa479",
+    "sizeBytes": 493280,
+    "width": 1920,
+    "height": 1080,
+    "sourceTimeSeconds": 104.966667,
+    "sourceFrame": 3149,
+    "description": "Codex and Claude hold separate live leases and non-overlapping paths against the same durable project."
+  },
+  "captions": {
+    "file": "agent-continuity-product-demo-v2.en.vtt",
+    "source": "apps/video/public/v2/captions/agent-continuity-product-demo-v2.en.vtt",
+    "sha256": "cb272e5d6379a68a74c2b9ec4884cad427ec7e2fb055139b22b2b32df90329fa",
+    "sizeBytes": 4180,
+    "language": "en",
+    "format": "WebVTT",
+    "cueCount": 38,
+    "firstCueStart": "00:00:00.450",
+    "lastCueEnd": "00:04:07.105"
+  },
+  "sourceAssets": {
+    "file": "agent-continuity-product-demo-v2-source-assets.tar.gz",
+    "sha256": "ab6aea826878b95f92db925b9457aca4f174f33054ddc96ca2f7478c216d31d4",
+    "sizeBytes": 7090053,
+    "format": "tar.gz",
+    "includes": [
+      "apps/video/package.json",
+      "apps/video/tsconfig.json",
+      "apps/video/src/v2/",
+      "apps/video/scripts/v2-*.mjs",
+      "apps/video/public/v2/",
+      "docs/video-v2/"
+    ],
+    "excludes": [
+      ".env",
+      ".env.local",
+      "node_modules/",
+      "apps/video/out/",
+      "apps/video/deliverables/",
+      "build output",
+      "credentials and secrets"
+    ]
+  },
+  "narration": {
+    "provider": "fal",
+    "model": "fal-ai/elevenlabs/tts/eleven-v3",
+    "voice": "Lily",
+    "settings": {
+      "apply_text_normalization": "auto",
+      "language_code": "en",
+      "output_format": "mp3_44100_192",
+      "seed": 240726,
+      "similarity_boost": 0.75,
+      "speed": 1,
+      "stability": 0.65,
+      "timestamps": true
+    },
+    "productionMetadata": "apps/video/public/v2/audio/lily/production.json",
+    "lockedScript": "docs/video-v2/script.md",
+    "sceneCount": 15,
+    "credentialsIncluded": false
+  },
+  "qualityAssurance": {
+    "initialReport": {
+      "path": "docs/video-v2/qa-report.md",
+      "verdict": "FAIL",
+      "purpose": "Preserved audit of the superseded master and its N09 evidence-placeholder blocker."
+    },
+    "independentRecheck": {
+      "path": "docs/video-v2/qa-recheck.md",
+      "verdict": "PASS",
+      "candidateSha256": "e7022d0821a1dd56bc5dea4abb2c66b422ecea1d02c605099e92d71815f08332"
+    }
+  },
+  "reproducibility": {
+    "typecheck": "pnpm --filter @agent-continuity/video typecheck:v2",
+    "timingValidation": "pnpm --filter @agent-continuity/video validate:v2",
+    "captureValidation": "node apps/video/scripts/v2-capture-verify.mjs",
+    "representativeStill": "pnpm --filter @agent-continuity/video exec remotion still src/v2/index.ts AgentContinuityProductDemoV2 out/v2/review-n07.png --frame=3149",
+    "reviewRender": "pnpm --filter @agent-continuity/video exec remotion render src/v2/index.ts AgentContinuityProductDemoV2 out/v2/review-n09.mp4 --frames=4280-4490 --codec=h264 --audio-codec=aac --pixel-format=yuv420p --crf=18",
+    "fullRender": "pnpm --filter @agent-continuity/video exec remotion render src/v2/index.ts AgentContinuityProductDemoV2 out/v2/agent-continuity-product-demo-v2-corrected-rc1.mp4 --codec=h264 --audio-codec=aac --pixel-format=yuv420p --crf=18 --concurrency=2"
+  }
+}

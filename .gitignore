@@ -19,9 +19,12 @@ playwright-report/
 
 # Local-only Remotion/video production workspace. Keep the final README media.
 apps/video/*
+!apps/video/README.md
 !apps/video/deliverables/
 apps/video/deliverables/*
 !apps/video/deliverables/agent-continuity-how-to-1080p.mp4
 !apps/video/deliverables/agent-continuity-how-to-poster.png
+!apps/video/deliverables/v2/
+!apps/video/deliverables/v2/**
 docs/video/
 scripts/video/
